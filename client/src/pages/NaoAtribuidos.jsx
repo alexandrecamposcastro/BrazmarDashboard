@@ -19,7 +19,14 @@ export default function NaoAtribuidos({cases,onAtribuir,onOpenCase}){
                 <div style={{flex:1,cursor:"pointer"}} onClick={()=>onOpenCase(c)}>
                   <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}><span style={{fontSize:17,fontWeight:700,color:C.dark}}>{c.vessel}</span><span style={{fontSize:11,background:"#fff8e1",color:"#856404",padding:"2px 8px",borderRadius:4,fontWeight:600}}>{tipo.icon} {tipo.label}</span><span style={{fontSize:11,fontWeight:700,color:urg.color}}>{urg.dot} {c.urgencia}</span></div>
                   <div style={{fontSize:13,color:C.muted,marginBottom:10}}>{c.cliente} · Porto: <b>{c.porto}</b> · ETA: {c.eta||"—"}</div>
-                  <div style={{fontSize:13,color:"#333",background:C.light,padding:"10px 14px",borderRadius:8,lineHeight:1.6}}>{c.summary||"Sem resumo."}</div>
+                  <div style={{fontSize:13,color:"#333",background:C.light,padding:"10px 14px",borderRadius:8,lineHeight:1.6}}>{(()=>{
+                      const raw=(c.summary||"Sem resumo.");
+                      const linhas=raw.split("\n")
+                        .map(l=>l.replace(/\*\*([^*]+)\*\*/g,"$1").replace(/\*+/g,"").replace(/^\s*[\d]+\.\s*/,"").trim())
+                        .filter(l=>l && !l.match(/^NÃO (INFORMADO|APLICÁVEL)/i));
+                      const preview=linhas.slice(0,8).join(" ");
+                      return preview.length>600 ? preview.substring(0,600)+"..." : preview;
+                    })()}</div>
                   <div style={{fontSize:12,color:C.muted,marginTop:8}}>📅 {c.created_at?.split("T")[0]||"—"}</div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:220}}>

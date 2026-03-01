@@ -11,7 +11,7 @@ export default function Dashboard({cases,onOpenCase}){
   return(
     <div style={{padding:"28px 32px"}}>
       <div style={{marginBottom:28}}><h1 style={{fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700,color:C.dark,margin:0}}>Dashboard</h1><p style={{color:C.muted,fontSize:13,margin:"4px 0 0"}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}</p></div>
-      <div style={{display:"flex",gap:16,marginBottom:28,flexWrap:"wrap"}}><StatCard label="Total de Casos" value={stats.total} color={C.primary} icon="📁"/><StatCard label="Em Andamento" value={stats.andamento} color={C.info} icon="⚓"/><StatCard label="Urgência Alta" value={stats.alta} color={C.danger} icon="🔴"/><StatCard label="Aguard. Faturamento" value={stats.faturar} color={C.yellow} icon="💰"/></div>
+      <div style={{display:"flex",gap:16,marginBottom:28,flexWrap:"wrap"}}><StatCard label="Total de Casos" value={stats.total} color={C.primary} icon=""/><StatCard label="Em Andamento" value={stats.andamento} color={C.info} icon=""/><StatCard label="Urgência Alta" value={stats.alta} color={C.danger} icon=""/><StatCard label="Aguard. Faturamento" value={stats.faturar} color={C.yellow} icon=""/></div>
       <div style={{background:"#fff",borderRadius:12,boxShadow:"0 2px 10px rgba(0,0,0,.06)",overflow:"hidden"}}>
         <div style={{padding:"18px 24px",borderBottom:`1px solid ${C.border}`}}><h2 style={{margin:0,fontSize:16,fontWeight:700,color:C.dark}}>Casos Recentes</h2></div>
         <div style={{overflowX:"auto"}}>

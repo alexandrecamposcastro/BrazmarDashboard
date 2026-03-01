@@ -131,7 +131,7 @@ app.put("/api/cases/:id/atribuir", auth, async (req, res) => {
   try {
     const { ref } = req.body;
     if (!ref) return res.status(400).json({ error: "Referência obrigatória" });
-    const updated = await db.updateCase(req.params.id, { ref, status: "aguardando_confirmacao" });
+    const updated = await db.updateCase(req.params.id, { ref, status: "em_andamento" });
     if (!updated) return res.status(404).json({ error: "Caso não encontrado" });
     res.json(updated);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -154,9 +154,9 @@ app.post("/api/cases/:id/emails", auth, async (req, res) => {
 // ── TIMESHEET ───────────────────────────────────────────────────────────────
 app.post("/api/cases/:id/timesheet", auth, async (req, res) => {
   try {
-    const { atividade, horas } = req.body;
+    const { atividade, horas, nome_manual } = req.body;
     if (!atividade || !horas) return res.status(400).json({ error: "atividade e horas obrigatórios" });
-    res.status(201).json(await db.addTimesheet({ case_id: req.params.id, user_id: req.user.id, atividade, horas }));
+    res.status(201).json(await db.addTimesheet({ case_id: req.params.id, user_id: req.user.id, nome_manual, atividade, horas }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -189,23 +189,101 @@ app.delete("/api/cases/:id/docs/:did", auth, async (req, res) => {
 
 // ── WEBHOOK (Google Apps Script → cria/atualiza casos automaticamente) ──────
 // Rota pública — o bot não precisa de token JWT para postar aqui
+
+// Calcula pontuação de similaridade entre o email novo e um caso existente
+function calcularSimilaridade(novo, existente) {
+  let score = 0;
+
+  // Navio igual (normalizado) → peso alto
+  const normNovo = (novo.vessel || "").toUpperCase().trim();
+  const normExist = (existente.vessel || "").toUpperCase().trim();
+  if (normNovo && normExist) {
+    if (normNovo === normExist) score += 50;
+    else if (normNovo.includes(normExist) || normExist.includes(normNovo)) score += 35;
+    else {
+      // Verifica se a primeira palavra bate (ex: "GUARDIAN" em "MV GUARDIAN")
+      const palavraNovo = normNovo.split(" ").find(w => w.length > 3);
+      const palavraExist = normExist.split(" ").find(w => w.length > 3);
+      if (palavraNovo && palavraExist && palavraNovo === palavraExist) score += 25;
+    }
+  }
+
+  // Porto igual ou parecido → peso médio
+  const portoNovo = (novo.porto || "").toUpperCase().replace(/[^A-Z]/g,"");
+  const portoExist = (existente.porto || "").toUpperCase().replace(/[^A-Z]/g,"");
+  if (portoNovo && portoExist) {
+    if (portoNovo === portoExist) score += 25;
+    else if (portoNovo.includes(portoExist) || portoExist.includes(portoNovo)) score += 15;
+    // Aliases conhecidos: ITAQUI ↔ SLZ, STM ↔ SANTAREM
+    const aliases = [["ITAQUI","SLZ"],["STM","SANTAREM"],["BELEM","BEL"],["MANAUS","MAO"]];
+    for (const [a, b] of aliases) {
+      if ((portoNovo.includes(a) && portoExist.includes(b)) ||
+          (portoNovo.includes(b) && portoExist.includes(a))) { score += 15; break; }
+    }
+  }
+
+  // Tipo igual → peso baixo
+  if (novo.tipo && existente.tipo && novo.tipo === existente.tipo) score += 10;
+
+  // Mesmo ano → peso baixo
+  const anoExist = (existente.created_at || "").substring(0, 4);
+  const anoNovo = new Date().getFullYear().toString();
+  if (anoExist === anoNovo) score += 10;
+
+  return score;
+}
+
 app.post("/api/webhook/email", async (req, res) => {
   try {
-    const { vessel, cliente, porto, tipo, urgencia, summary, de, assunto, ref } = req.body;
+    const { vessel, cliente, porto, tipo, urgencia, summary, emailBody, de, assunto, ref } = req.body;
     if (!vessel) return res.status(400).json({ error: "vessel obrigatório" });
-    // Se tem ref e existe caso com essa ref → linka o email ao caso existente
+
+    const resumoEmail = emailBody || assunto || "";
+    const urgPriority = { "ALTA": 3, "MÉDIA": 2, "BAIXA": 1 };
+    const novaUrgPrio = urgPriority[urgencia] || 1;
+
+    // 1. Se tem ref → busca por ref exata primeiro
     if (ref) {
       const existing = await db.findCaseByRef(ref);
       if (existing) {
-        await db.addEmail({ case_id: existing.id, de: de||"", assunto: assunto||"", resumo: summary||"" });
-        if (summary) await db.updateCase(existing.id, { summary });
-        return res.json({ linked: true, case_id: existing.id });
+        await db.addEmail({ case_id: existing.id, de: de||"", assunto: assunto||"", resumo: resumoEmail });
+        const updates = {};
+        if (summary) updates.summary = summary;
+        if (urgencia && novaUrgPrio > (urgPriority[existing.urgencia] || 1)) updates.urgencia = urgencia;
+        if (Object.keys(updates).length) await db.updateCase(existing.id, updates);
+        return res.json({ linked: true, case_id: existing.id, method: "ref" });
       }
     }
-    // Sem ref ou caso não encontrado → cria caso novo na fila "Não Atribuídos"
+
+    // 2. Sem ref (ou ref não encontrada) → busca casos não atribuídos similares
+    const candidatos = await db.findUnassignedByVessel(vessel);
+    let melhorCaso = null;
+    let melhorScore = 0;
+
+    for (const candidato of candidatos) {
+      const score = calcularSimilaridade({ vessel, porto, tipo }, candidato);
+      if (score > melhorScore) { melhorScore = score; melhorCaso = candidato; }
+    }
+
+    // Score >= 60 = confiança suficiente para mesclar
+    // (navio igual=50 + porto igual=25 = 75 → mescla; navio parecido=35 + porto=25 = 60 → mescla)
+    if (melhorCaso && melhorScore >= 60) {
+      await db.addEmail({ case_id: melhorCaso.id, de: de||"", assunto: assunto||"", resumo: resumoEmail });
+      const updates = {};
+      // Atualiza summary com o mais novo (bot já gerou com contexto completo)
+      if (summary) updates.summary = summary;
+      // Preenche campos vazios com os novos dados
+      if (!melhorCaso.cliente && cliente) updates.cliente = cliente;
+      if (urgencia && novaUrgPrio > (urgPriority[melhorCaso.urgencia] || 1)) updates.urgencia = urgencia;
+      if (Object.keys(updates).length) await db.updateCase(melhorCaso.id, updates);
+      return res.json({ linked: true, case_id: melhorCaso.id, method: "similarity", score: melhorScore });
+    }
+
+    // 3. Nenhum caso similar encontrado → cria caso novo
     const caso = await db.createCase({ vessel, cliente, porto, tipo, urgencia, summary, status: "nao_atribuido" });
-    await db.addEmail({ case_id: caso.id, de: de||"", assunto: assunto||"", resumo: summary||"" });
+    await db.addEmail({ case_id: caso.id, de: de||"", assunto: assunto||"", resumo: resumoEmail });
     res.status(201).json({ linked: false, case_id: caso.id });
+
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

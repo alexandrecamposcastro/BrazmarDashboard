@@ -33,6 +33,7 @@ export default function App() {
   const handleSaveCase = async (form) => { await api.createCase(form); setShowModal(false); refresh(); setView("casos"); };
   const handleAtribuir = async (id, ref) => { await api.atribuirRef(id, ref); refresh(); };
   const handleUpdateCase = async (id, data) => { const u = await api.updateCase(id, data); setSelectedCase(prev => ({ ...prev, ...u })); refresh(); };
+  const handleDeleteCase = async (id) => { await api.deleteCase(id); setSelectedCase(null); setView("casos"); refresh(); };
   const handleCaseDetailRefresh = async () => { if (selectedCase) setSelectedCase(await api.getCase(selectedCase.id)); refresh(); };
 
   if (loading) return <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#0d1b2a" }}><div style={{ color:"#fff", fontSize:16 }}>Carregando...</div></div>;
@@ -43,7 +44,7 @@ export default function App() {
     <div style={{ display:"flex", minHeight:"100vh", background:"#f8f9fa" }}>
       <Sidebar active={selectedCase ? "casos" : view} onNav={handleNav} user={user} onLogout={handleLogout} unassignedCount={unassignedCount} />
       <div style={{ flex:1, overflowY:"auto", minWidth:0 }}>
-        {selectedCase ? <CaseDetail caso={selectedCase} onBack={() => { setSelectedCase(null); refresh(); }} onUpdate={handleUpdateCase} onRefresh={handleCaseDetailRefresh} currentUser={user} />
+        {selectedCase ? <CaseDetail caso={selectedCase} onBack={() => { setSelectedCase(null); refresh(); }} onUpdate={handleUpdateCase} onDelete={handleDeleteCase} onRefresh={handleCaseDetailRefresh} currentUser={user} />
           : view === "dashboard" ? <Dashboard cases={cases} onOpenCase={handleOpenCase} />
           : view === "casos" ? <CasesList cases={cases} onOpenCase={handleOpenCase} onNewCase={() => setShowModal(true)} />
           : view === "nao_atribuidos" ? <NaoAtribuidos cases={cases} onAtribuir={handleAtribuir} onOpenCase={handleOpenCase} />

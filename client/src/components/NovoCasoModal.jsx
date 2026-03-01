@@ -18,12 +18,12 @@ export default function NovoCasoModal({ onClose, onSave }) {
           <button onClick={onClose} style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:C.muted }}>✕</button>
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-          <Field label="REFERÊNCIA"><input style={inp} value={form.ref} onChange={s("ref")} placeholder="Ex: 1120.26.SLZ (opcional)"/></Field>
+          <Field label="REFERÊNCIA"><input style={inp} value={form.ref} onChange={s("ref")} placeholder="XXXX.26.SIGLA"/></Field>
           <Field label="NAVIO *"><input style={inp} value={form.vessel} onChange={s("vessel")} placeholder="MV [NOME DO NAVIO]"/></Field>
-          <Field label="ARMADOR"><input style={inp} value={form.armador} onChange={s("armador")} placeholder="Nome do armador"/></Field>
-          <Field label="CLIENTE / P&I"><input style={inp} value={form.cliente} onChange={s("cliente")} placeholder="Ex: West of England P&I"/></Field>
+          <Field label="ARMADOR"><input style={inp} value={form.armador} onChange={s("armador")} placeholder="Armador"/></Field>
+          <Field label="CLIENTE / P&I"><input style={inp} value={form.cliente} onChange={s("cliente")} placeholder="Cliente"/></Field>
           <Field label="PORTO"><select style={inp} value={form.porto} onChange={s("porto")}>{[["SLZ","São Luís"],["FOR","Fortaleza"],["REC","Recife"],["SSA","Salvador"],["MCZ","Maceió"],["NAT","Natal"]].map(([v,l])=><option key={v} value={v}>{l} ({v})</option>)}</select></Field>
-          <Field label="TIPO"><select style={inp} value={form.tipo} onChange={s("tipo")}><option value="fixed_fee">📋 Fixed Fee</option><option value="sinistro">⚠️ Sinistro</option><option value="medico">🏥 Médico</option></select></Field>
+          <Field label="TIPO"><select style={inp} value={form.tipo} onChange={s("tipo")}><option value="fixed_fee">Fixed Fee</option><option value="sinistro">Sinistro</option><option value="medico">Médico</option></select></Field>
           <Field label="URGÊNCIA"><select style={inp} value={form.urgencia} onChange={s("urgencia")}><option value="BAIXA">🟢 Baixa</option><option value="MÉDIA">🟡 Média</option><option value="ALTA">🔴 Alta</option></select></Field>
           <Field label="ETA"><input style={inp} type="date" value={form.eta} onChange={s("eta")}/></Field>
           <Field label="ETB"><input style={inp} type="date" value={form.etb} onChange={s("etb")}/></Field>

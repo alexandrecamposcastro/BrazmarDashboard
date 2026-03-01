@@ -47,6 +47,7 @@ async function init() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       case_id INTEGER NOT NULL,
       user_id INTEGER NOT NULL,
+      nome_manual TEXT DEFAULT '',
       atividade TEXT NOT NULL,
       horas REAL NOT NULL,
       data TEXT NOT NULL,
@@ -66,6 +67,10 @@ async function init() {
       FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
     );
   `);
+  // Migracao: adiciona nome_manual se nao existir (bancos ja criados)
+  try {
+    await client.execute("ALTER TABLE timesheet ADD COLUMN nome_manual TEXT DEFAULT ''");
+  } catch(e) { /* coluna ja existe */ }
 }
 
 // ── USERS ──────────────────────────────────────────────────────────────────
@@ -97,6 +102,15 @@ async function listCases() {
 async function findCase(id) {
   const r = await client.execute({ sql: "SELECT * FROM cases WHERE id = ?", args: [Number(id)] });
   return r.rows[0] ? parseCase(r.rows[0]) : null;
+}
+async function findUnassignedByVessel(vessel) {
+  // Busca casos não atribuídos do mesmo navio criados no mesmo ano
+  const year = new Date().getFullYear().toString();
+  const r = await client.execute({
+    sql: "SELECT * FROM cases WHERE status = 'nao_atribuido' AND vessel LIKE ? AND created_at LIKE ?",
+    args: ["%" + vessel.split(" ")[0] + "%", year + "%"]
+  });
+  return r.rows.map(parseCase);
 }
 async function findCaseByRef(ref) {
   const r = await client.execute({ sql: "SELECT * FROM cases WHERE ref = ? AND ref != ''", args: [ref] });
@@ -144,13 +158,14 @@ async function addEmail({ case_id, de, assunto, resumo }) {
 // ── TIMESHEET ──────────────────────────────────────────────────────────────
 async function listTimesheetForCase(case_id) {
   const r = await client.execute({ sql: "SELECT t.*, u.nome as usuario_nome FROM timesheet t JOIN users u ON t.user_id = u.id WHERE t.case_id = ? ORDER BY t.created_at ASC", args: [Number(case_id)] });
-  return r.rows.map(t => ({ ...t, id: Number(t.id), usuario: t.usuario_nome }));
+  return r.rows.map(t => ({ ...t, id: Number(t.id), usuario: t.nome_manual || t.usuario_nome }));
 }
-async function addTimesheet({ case_id, user_id, atividade, horas }) {
+async function addTimesheet({ case_id, user_id, nome_manual, atividade, horas }) {
   const data = new Date().toLocaleDateString("pt-BR");
-  const r = await client.execute({ sql: "INSERT INTO timesheet (case_id, user_id, atividade, horas, data) VALUES (?, ?, ?, ?, ?)", args: [Number(case_id), Number(user_id), atividade, Number(horas), data] });
+  const r = await client.execute({ sql: "INSERT INTO timesheet (case_id, user_id, nome_manual, atividade, horas, data) VALUES (?, ?, ?, ?, ?, ?)", args: [Number(case_id), Number(user_id), nome_manual||"", atividade, Number(horas), data] });
   const row = await client.execute({ sql: "SELECT t.*, u.nome as usuario_nome FROM timesheet t JOIN users u ON t.user_id = u.id WHERE t.id = ?", args: [Number(r.lastInsertRowid)] });
-  return { ...row.rows[0], id: Number(row.rows[0].id), usuario: row.rows[0].usuario_nome };
+  const t = row.rows[0];
+  return { ...t, id: Number(t.id), usuario: t.nome_manual || t.usuario_nome };
 }
 async function deleteTimesheet(id, case_id) {
   await client.execute({ sql: "DELETE FROM timesheet WHERE id=? AND case_id=?", args: [Number(id), Number(case_id)] });
@@ -176,4 +191,4 @@ async function deleteDoc(id, case_id) {
   return doc;
 }
 
-module.exports = { init, findUserByEmail, findUserById, createUser, listUsers, listCases, findCase, findCaseByRef, createCase, updateCase, deleteCase, listEmailsForCase, addEmail, listTimesheetForCase, addTimesheet, deleteTimesheet, listDocsForCase, addDoc, deleteDoc };
+module.exports = { init, findUserByEmail, findUserById, createUser, listUsers, listCases, findCase, findCaseByRef, findUnassignedByVessel, createCase, updateCase, deleteCase, listEmailsForCase, addEmail, listTimesheetForCase, addTimesheet, deleteTimesheet, listDocsForCase, addDoc, deleteDoc };
