@@ -1,6 +1,6 @@
 import { useState } from "react";
 const C={primary:"#007bff",dark:"#1a2332",light:"#f8f9fa",muted:"#868e96",border:"#dee2e6",warning:"#fd7e14"};
-const TIPO={fixed_fee:{label:"Fixed Fee",icon:"📋"},sinistro:{label:"Sinistro",icon:"⚠️"},medico:{label:"Médico",icon:"🏥"}};
+const TIPO={fixed_fee:{label:"Fixed Fee",icon:""},sinistro:{label:"Sinistro",icon:""},medico:{label:"Médico",icon:""}};
 const URG={ALTA:{color:"#dc3545",dot:"🔴"},MÉDIA:{color:"#fd7e14",dot:"🟡"},BAIXA:{color:"#28a745",dot:"🟢"}};
 export default function NaoAtribuidos({cases,onAtribuir,onOpenCase}){
   const unassigned=cases.filter(c=>c.status==="nao_atribuido");

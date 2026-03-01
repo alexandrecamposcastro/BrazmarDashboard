@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { api } from "../api/index.js";
 const C={primary:"#007bff",dark:"#1a2332",light:"#f8f9fa",muted:"#868e96",border:"#dee2e6",danger:"#dc3545",success:"#28a745",warning:"#fd7e14",info:"#17a2b8",yellow:"#ffc107"};
 const STATUS_CFG={nao_atribuido:{label:"Não Atribuído",color:"#fff",bg:"#adb5bd"},aguardando_confirmacao:{label:"Aguard. Confirmação",color:"#212529",bg:"#ffc107"},em_andamento:{label:"Em Andamento",color:"#fff",bg:"#007bff"},operacao_encerrada:{label:"Op. Encerrada",color:"#fff",bg:"#17a2b8"},aguardando_faturamento:{label:"Aguard. Faturamento",color:"#212529",bg:"#fd7e14"},encerrado:{label:"Encerrado",color:"#fff",bg:"#28a745"}};
-const TIPO={fixed_fee:{label:"Fixed Fee",icon:"📋"},sinistro:{label:"Sinistro",icon:"⚠️"},medico:{label:"Médico",icon:"🏥"}};
+const TIPO={fixed_fee:{label:"Fixed Fee",icon:""},sinistro:{label:"Sinistro",icon:"⚠️"},medico:{label:"Médico",icon:"🏥"}};
 const URG={ALTA:{color:"#dc3545",dot:"🔴"},MÉDIA:{color:"#fd7e14",dot:"🟡"},BAIXA:{color:"#28a745",dot:"🟢"}};
 const sigla=nome=>(nome||"?").split(" ").filter(Boolean).map(w=>w[0].toUpperCase()).slice(0,2).join("");
 const Avatar=({nome})=><div title={nome} style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#007bff,#17a2b8)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>{sigla(nome)}</div>;
@@ -59,9 +59,9 @@ function EditModal({caso, onClose, onSave}) {
           <div><label style={lbl}>PORTO</label><input style={inp} value={form.porto} onChange={set("porto")}/></div>
           <div><label style={lbl}>TIPO</label>
             <select style={inp} value={form.tipo} onChange={set("tipo")}>
-              <option value="fixed_fee">📋 Fixed Fee</option>
-              <option value="sinistro">⚠️ Sinistro</option>
-              <option value="medico">🏥 Médico</option>
+              <option value="fixed_fee">Fixed Fee</option>
+              <option value="sinistro">Sinistro</option>
+              <option value="medico">Médico</option>
             </select>
           </div>
           <div><label style={lbl}>URGÊNCIA</label>
@@ -121,7 +121,7 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
   const handleDelTime=async tid=>{if(!confirm("Remover?"))return;await api.deleteTimesheet(caso.id,tid);setTimesheet(p=>p.filter(t=>t.id!==tid))};
   const handleUpload=async e=>{const files=Array.from(e.target.files);if(!files.length)return;setUploading(true);try{const saved=await api.uploadDocs(caso.id,files);setDocs(p=>[...p,...saved]);}catch(err){alert("Erro no upload: "+err.message)}finally{setUploading(false);e.target.value=""}};
   const handleDelDoc=async did=>{if(!confirm("Remover documento?"))return;await api.deleteDoc(caso.id,did);setDocs(p=>p.filter(d=>d.id!==did))};
-  const tabs=[{id:"resumo",label:"📋 Resumo"},{id:"emails",label:`📧 Emails (${(caso.emails||[]).length})`},{id:"timesheet",label:"⏱ Timesheet"},{id:"docs",label:`📂 Docs (${docs.length})`}];
+  const tabs=[{id:"resumo",label:"Resumo"},{id:"emails",label:`Emails (${(caso.emails||[]).length})`},{id:"timesheet",label:"Timesheet"},{id:"docs",label:`Docs (${docs.length})`}];
   const th={padding:"10px 14px",fontSize:11,letterSpacing:1,color:C.muted,fontWeight:700,borderBottom:`2px solid ${C.border}`,textAlign:"left",background:C.light};
   const td={padding:"12px 14px",fontSize:13,borderBottom:`1px solid ${C.border}`};
   return(

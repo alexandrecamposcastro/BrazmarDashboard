@@ -2,8 +2,8 @@ const C = { primary:"#007bff", sidebar:"#0d1b2a", muted:"#868e96", danger:"#dc35
 export default function Sidebar({ active, onNav, user, onLogout, unassignedCount }) {
   const nav = [
     { id:"dashboard",      icon:"⊞", label:"Dashboard" },
-    { id:"casos",          icon:"📁", label:"Casos" },
-    { id:"nao_atribuidos", icon:"📥", label:"Não Atribuídos", badge: unassignedCount },
+    { id:"casos",          icon:"", label:"Casos" },
+    { id:"nao_atribuidos", icon:"", label:"Não Atribuídos", badge: unassignedCount },
     { id:"novo",           icon:"＋", label:"Novo Caso" },
   ];
   const ini = (user.nome||"?").split(" ").filter(Boolean).map(w=>w[0]).slice(0,2).join("");

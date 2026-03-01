@@ -1,5 +1,5 @@
 const STATUS_CFG={nao_atribuido:{label:"Não Atribuído",color:"#fff",bg:"#adb5bd"},aguardando_confirmacao:{label:"Aguard. Confirmação",color:"#212529",bg:"#ffc107"},em_andamento:{label:"Em Andamento",color:"#fff",bg:"#007bff"},operacao_encerrada:{label:"Op. Encerrada",color:"#fff",bg:"#17a2b8"},aguardando_faturamento:{label:"Aguard. Faturamento",color:"#212529",bg:"#fd7e14"},encerrado:{label:"Encerrado",color:"#fff",bg:"#28a745"}};
-const TIPO={fixed_fee:{label:"Fixed Fee",icon:"📋"},sinistro:{label:"Sinistro",icon:"⚠️"},medico:{label:"Médico",icon:"🏥"}};
+const TIPO={fixed_fee:{label:"Fixed Fee",icon:""},sinistro:{label:"Sinistro",icon:""},medico:{label:"Médico",icon:""}};
 const URG={ALTA:{color:"#dc3545",dot:"🔴"},MÉDIA:{color:"#fd7e14",dot:"🟡"},BAIXA:{color:"#28a745",dot:"🟢"}};
 const C={primary:"#007bff",info:"#17a2b8",danger:"#dc3545",yellow:"#ffc107",dark:"#1a2332",light:"#f8f9fa",muted:"#868e96",border:"#dee2e6"};
 const Badge=({status})=>{const c=STATUS_CFG[status]||STATUS_CFG.em_andamento;return<span style={{background:c.bg,color:c.color,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>{c.label}</span>;};
