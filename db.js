@@ -104,11 +104,15 @@ async function findCase(id) {
   return r.rows[0] ? parseCase(r.rows[0]) : null;
 }
 async function findUnassignedByVessel(vessel) {
-  // Busca casos não atribuídos do mesmo navio criados no mesmo ano
+  // Ignora prefixos nauticos, usa a palavra mais significativa do nome
+  const prefixos = ['MV','MS','MT','M/V','M/T','SS','SV','RV','FV','MB'];
+  const palavras = vessel.toUpperCase().trim().split(/\s+/).filter(w => !prefixos.includes(w) && w.length > 2);
+  const chave = palavras[0] || vessel.trim().split(' ')[0];
   const year = new Date().getFullYear().toString();
+  // Busca nao_atribuido E casos ja ativos (para linkar emails de casos em andamento)
   const r = await client.execute({
-    sql: "SELECT * FROM cases WHERE status = 'nao_atribuido' AND vessel LIKE ? AND created_at LIKE ?",
-    args: ["%" + vessel.split(" ")[0] + "%", year + "%"]
+    sql: "SELECT * FROM cases WHERE status IN ('nao_atribuido','em_andamento','aguardando_confirmacao') AND UPPER(vessel) LIKE ? AND created_at LIKE ?",
+    args: ['%' + chave + '%', year + '%']
   });
   return r.rows.map(parseCase);
 }

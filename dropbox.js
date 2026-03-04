@@ -2,7 +2,7 @@
 const https = require("https");
 
 const DROPBOX_TOKEN = () => process.env.DROPBOX_TOKEN;
-const BASE_PATH = "/BRAZMAR - Relatorios/Relatorios em andamento";
+const BASE_PATH = "/BRAZMAR - Relatórios/Relatorios em andamento";
 
 // Remove prefixos náuticos do nome do navio
 function limparNomeNavio(vesselName) {

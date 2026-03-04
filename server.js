@@ -215,35 +215,42 @@ app.post("/api/cases/:id/analisar-docs", auth, async (req, res) => {
 // ── WEBHOOK (Google Apps Script → cria/atualiza casos automaticamente) ──────
 // Rota pública — o bot não precisa de token JWT para postar aqui
 
-// Calcula pontuação de similaridade entre o email novo e um caso existente
+// Normaliza nome de navio removendo prefixos náuticos
+function normalizarNavio(v) {
+  return (v||"").toUpperCase().replace(/^(MV|MS|MT|M\/V|M\/T|SS|SV|RV|FV|MB)\s+/i,"").trim();
+}
+
+// Calcula pontuação de similaridade entre email novo e caso existente
+// Ref BRAZMAR igual = 100 pontos (garantia absoluta)
+// Sem ref: navio + porto + tipo + ano
 function calcularSimilaridade(novo, existente) {
+  // Ref BRAZMAR igual → 100 pontos, mescla garantida
+  if (novo.ref && existente.ref && novo.ref.trim() === existente.ref.trim()) return 100;
+
   let score = 0;
 
-  // Navio igual (normalizado) → peso alto
-  const normNovo = (novo.vessel || "").toUpperCase().trim();
-  const normExist = (existente.vessel || "").toUpperCase().trim();
-  if (normNovo && normExist) {
-    if (normNovo === normExist) score += 50;
-    else if (normNovo.includes(normExist) || normExist.includes(normNovo)) score += 35;
+  // Navio → peso principal
+  const nNovo = normalizarNavio(novo.vessel);
+  const nExist = normalizarNavio(existente.vessel);
+  if (nNovo && nExist) {
+    if (nNovo === nExist) score += 50;
+    else if (nNovo.includes(nExist) || nExist.includes(nNovo)) score += 35;
     else {
-      // Verifica se a primeira palavra bate (ex: "GUARDIAN" em "MV GUARDIAN")
-      const palavraNovo = normNovo.split(" ").find(w => w.length > 3);
-      const palavraExist = normExist.split(" ").find(w => w.length > 3);
-      if (palavraNovo && palavraExist && palavraNovo === palavraExist) score += 25;
+      const wNovo = nNovo.split(" ").find(w => w.length > 3);
+      const wExist = nExist.split(" ").find(w => w.length > 3);
+      if (wNovo && wExist && wNovo === wExist) score += 25;
     }
   }
 
-  // Porto igual ou parecido → peso médio
-  const portoNovo = (novo.porto || "").toUpperCase().replace(/[^A-Z]/g,"");
-  const portoExist = (existente.porto || "").toUpperCase().replace(/[^A-Z]/g,"");
-  if (portoNovo && portoExist) {
-    if (portoNovo === portoExist) score += 25;
-    else if (portoNovo.includes(portoExist) || portoExist.includes(portoNovo)) score += 15;
-    // Aliases conhecidos: ITAQUI ↔ SLZ, STM ↔ SANTAREM
-    const aliases = [["ITAQUI","SLZ"],["STM","SANTAREM"],["BELEM","BEL"],["MANAUS","MAO"]];
+  // Porto → peso médio
+  const pNovo = (novo.porto||"").toUpperCase().replace(/[^A-Z]/g,"");
+  const pExist = (existente.porto||"").toUpperCase().replace(/[^A-Z]/g,"");
+  if (pNovo && pExist) {
+    if (pNovo === pExist) score += 25;
+    else if (pNovo.includes(pExist) || pExist.includes(pNovo)) score += 15;
+    const aliases = [["ITAQUI","SLZ"],["STM","SANTAREM"],["SANTARM","SANTAREM"],["BELEM","BEL"],["MANAUS","MAO"]];
     for (const [a, b] of aliases) {
-      if ((portoNovo.includes(a) && portoExist.includes(b)) ||
-          (portoNovo.includes(b) && portoExist.includes(a))) { score += 15; break; }
+      if ((pNovo.includes(a)&&pExist.includes(b))||(pNovo.includes(b)&&pExist.includes(a))) { score += 15; break; }
     }
   }
 
@@ -251,61 +258,48 @@ function calcularSimilaridade(novo, existente) {
   if (novo.tipo && existente.tipo && novo.tipo === existente.tipo) score += 10;
 
   // Mesmo ano → peso baixo
-  const anoExist = (existente.created_at || "").substring(0, 4);
-  const anoNovo = new Date().getFullYear().toString();
-  if (anoExist === anoNovo) score += 10;
+  if ((existente.created_at||"").startsWith(new Date().getFullYear().toString())) score += 10;
 
   return score;
 }
 
 app.post("/api/webhook/email", async (req, res) => {
   try {
-    const { vessel, cliente, porto, tipo, urgencia, summary, emailBody, de, assunto, ref } = req.body;
+    const { vessel, cliente, porto, tipo, urgencia, summary, emailBody, de, assunto, ref, eta, etb, ets } = req.body;
     if (!vessel) return res.status(400).json({ error: "vessel obrigatório" });
 
     const resumoEmail = emailBody || assunto || "";
     const urgPriority = { "ALTA": 3, "MÉDIA": 2, "BAIXA": 1 };
     const novaUrgPrio = urgPriority[urgencia] || 1;
 
-    // 1. Se tem ref → busca por ref exata primeiro
-    if (ref) {
-      const existing = await db.findCaseByRef(ref);
-      if (existing) {
-        await db.addEmail({ case_id: existing.id, de: de||"", assunto: assunto||"", resumo: resumoEmail });
-        const updates = {};
-        if (summary) updates.summary = summary;
-        if (urgencia && novaUrgPrio > (urgPriority[existing.urgencia] || 1)) updates.urgencia = urgencia;
-        if (Object.keys(updates).length) await db.updateCase(existing.id, updates);
-        return res.json({ linked: true, case_id: existing.id, method: "ref" });
-      }
-    }
-
-    // 2. Sem ref (ou ref não encontrada) → busca casos não atribuídos similares
+    // Busca TODOS os candidatos do mesmo navio (qualquer status ativo)
+    // A ref entra como critério de pontuação — ref igual = 100 pontos = mescla garantida
     const candidatos = await db.findUnassignedByVessel(vessel);
     let melhorCaso = null;
     let melhorScore = 0;
 
     for (const candidato of candidatos) {
-      const score = calcularSimilaridade({ vessel, porto, tipo }, candidato);
+      const score = calcularSimilaridade({ vessel, porto, tipo, ref }, candidato);
       if (score > melhorScore) { melhorScore = score; melhorCaso = candidato; }
     }
 
-    // Score >= 60 = confiança suficiente para mesclar
-    // (navio igual=50 + porto igual=25 = 75 → mescla; navio parecido=35 + porto=25 = 60 → mescla)
     if (melhorCaso && melhorScore >= 60) {
       await db.addEmail({ case_id: melhorCaso.id, de: de||"", assunto: assunto||"", resumo: resumoEmail });
       const updates = {};
-      // Atualiza summary com o mais novo (bot já gerou com contexto completo)
       if (summary) updates.summary = summary;
-      // Preenche campos vazios com os novos dados
       if (!melhorCaso.cliente && cliente) updates.cliente = cliente;
       if (urgencia && novaUrgPrio > (urgPriority[melhorCaso.urgencia] || 1)) updates.urgencia = urgencia;
+      if (eta) updates.eta = eta;
+      if (etb) updates.etb = etb;
+      if (ets) updates.ets = ets;
+      // Se o caso não tinha ref e agora tem, atualiza
+      if (ref && !melhorCaso.ref) { updates.ref = ref; updates.status = "em_andamento"; }
       if (Object.keys(updates).length) await db.updateCase(melhorCaso.id, updates);
-      return res.json({ linked: true, case_id: melhorCaso.id, method: "similarity", score: melhorScore });
+      return res.json({ linked: true, case_id: melhorCaso.id, method: melhorScore === 100 ? "ref" : "similarity", score: melhorScore });
     }
 
-    // 3. Nenhum caso similar encontrado → cria caso novo
-    const caso = await db.createCase({ vessel, cliente, porto, tipo, urgencia, summary, status: "nao_atribuido" });
+    // Nenhum caso similar → cria caso novo
+    const caso = await db.createCase({ vessel, cliente, porto, tipo, urgencia, summary, eta: eta||'', etb: etb||'', ets: ets||'', ref: ref||'', status: ref ? 'em_andamento' : 'nao_atribuido' });
     await db.addEmail({ case_id: caso.id, de: de||"", assunto: assunto||"", resumo: resumoEmail });
     res.status(201).json({ linked: false, case_id: caso.id });
 
