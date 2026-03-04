@@ -85,15 +85,18 @@ async function uploadArquivo(vesselName, filename, buffer) {
       let chunks = [];
       res.on("data", c => chunks.push(c));
       res.on("end", () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
-        catch (e) { reject(e); }
+        const text = Buffer.concat(chunks).toString();
+        console.log("Dropbox upload response [" + res.statusCode + "]:", text.substring(0, 300));
+        if (!text || !text.trim()) return reject(new Error("Dropbox retornou resposta vazia (status " + res.statusCode + ")"));
+        try { resolve(JSON.parse(text)); }
+        catch (e) { reject(new Error("Dropbox resposta invalida: " + text.substring(0, 200))); }
       });
     });
     req.on("error", reject);
     req.write(buffer);
     req.end();
   });
-  return result; // tem result.path_display, result.id etc
+  return result;
 }
 
 // Lista arquivos da pasta Docs do caso
