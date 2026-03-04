@@ -36,5 +36,7 @@ export const api = {
   deleteTimesheet: (caseId, tid) => request("DELETE", `/cases/${caseId}/timesheet/${tid}`),
   uploadDocs: (caseId, files) => uploadFiles(`/cases/${caseId}/docs`, files),
   deleteDoc: (caseId, did) => request("DELETE", `/cases/${caseId}/docs/${did}`),
+  refreshDocLink: (caseId, did) => request("GET", `/cases/${caseId}/docs/${did}/link`),
+  analisarDocs: (caseId) => request("POST", `/cases/${caseId}/analisar-docs`),
   getUsers: () => request("GET", "/users"),
 };

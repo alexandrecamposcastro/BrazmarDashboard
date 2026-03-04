@@ -18,7 +18,7 @@ export default function NaoAtribuidos({cases,onAtribuir,onOpenCase}){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:16}}>
                 <div style={{flex:1,cursor:"pointer"}} onClick={()=>onOpenCase(c)}>
                   <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}><span style={{fontSize:17,fontWeight:700,color:C.dark}}>{c.vessel}</span><span style={{fontSize:11,background:"#fff8e1",color:"#856404",padding:"2px 8px",borderRadius:4,fontWeight:600}}>{tipo.icon} {tipo.label}</span><span style={{fontSize:11,fontWeight:700,color:urg.color}}>{urg.dot} {c.urgencia}</span></div>
-                  <div style={{fontSize:13,color:C.muted,marginBottom:10}}>{c.cliente} · Porto: <b>{c.porto}</b> · ETA: {c.eta||"—"}</div>
+                  <div style={{fontSize:13,color:C.muted,marginBottom:10}}>{c.cliente} · Localização: <b>{c.porto}</b> · ETA: {c.eta||"—"}</div>
                   <div style={{fontSize:13,color:"#333",background:C.light,padding:"10px 14px",borderRadius:8,lineHeight:1.6}}>{(()=>{
                       const raw=(c.summary||"Sem resumo.");
                       const linhas=raw.split("\n")

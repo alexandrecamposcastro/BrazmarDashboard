@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { api } from "../api/index.js";
 const C={primary:"#007bff",dark:"#1a2332",light:"#f8f9fa",muted:"#868e96",border:"#dee2e6",danger:"#dc3545",success:"#28a745",warning:"#fd7e14",info:"#17a2b8",yellow:"#ffc107"};
 const STATUS_CFG={nao_atribuido:{label:"Não Atribuído",color:"#fff",bg:"#adb5bd"},aguardando_confirmacao:{label:"Aguard. Confirmação",color:"#212529",bg:"#ffc107"},em_andamento:{label:"Em Andamento",color:"#fff",bg:"#007bff"},operacao_encerrada:{label:"Op. Encerrada",color:"#fff",bg:"#17a2b8"},aguardando_faturamento:{label:"Aguard. Faturamento",color:"#212529",bg:"#fd7e14"},encerrado:{label:"Encerrado",color:"#fff",bg:"#28a745"}};
-const TIPO={fixed_fee:{label:"Fixed Fee",icon:""},sinistro:{label:"Sinistro",icon:"⚠️"},medico:{label:"Médico",icon:"🏥"}};
+const TIPO={fixed_fee:{label:"Fixed Fee",icon:"📋"},sinistro:{label:"Sinistro",icon:"⚠️"},medico:{label:"Médico",icon:"🏥"}};
 const URG={ALTA:{color:"#dc3545",dot:"🔴"},MÉDIA:{color:"#fd7e14",dot:"🟡"},BAIXA:{color:"#28a745",dot:"🟢"}};
 const sigla=nome=>(nome||"?").split(" ").filter(Boolean).map(w=>w[0].toUpperCase()).slice(0,2).join("");
 const Avatar=({nome})=><div title={nome} style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,#007bff,#17a2b8)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>{sigla(nome)}</div>;
@@ -59,9 +59,9 @@ function EditModal({caso, onClose, onSave}) {
           <div><label style={lbl}>PORTO</label><input style={inp} value={form.porto} onChange={set("porto")}/></div>
           <div><label style={lbl}>TIPO</label>
             <select style={inp} value={form.tipo} onChange={set("tipo")}>
-              <option value="fixed_fee">Fixed Fee</option>
-              <option value="sinistro">Sinistro</option>
-              <option value="medico">Médico</option>
+              <option value="fixed_fee">📋 Fixed Fee</option>
+              <option value="sinistro">⚠️ Sinistro</option>
+              <option value="medico">🏥 Médico</option>
             </select>
           </div>
           <div><label style={lbl}>URGÊNCIA</label>
@@ -101,6 +101,7 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
   const [savingStatus,setSavingStatus]=useState(false);
   const [addingTime,setAddingTime]=useState(false);
   const [uploading,setUploading]=useState(false);
+  const [analisando,setAnalisando]=useState(false);
   const fileRef=useRef();
   const totalH=timesheet.reduce((s,t)=>s+Number(t.horas),0);
   const tipo=TIPO[caseData.tipo]||TIPO.fixed_fee;
@@ -121,7 +122,18 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
   const handleDelTime=async tid=>{if(!confirm("Remover?"))return;await api.deleteTimesheet(caso.id,tid);setTimesheet(p=>p.filter(t=>t.id!==tid))};
   const handleUpload=async e=>{const files=Array.from(e.target.files);if(!files.length)return;setUploading(true);try{const saved=await api.uploadDocs(caso.id,files);setDocs(p=>[...p,...saved]);}catch(err){alert("Erro no upload: "+err.message)}finally{setUploading(false);e.target.value=""}};
   const handleDelDoc=async did=>{if(!confirm("Remover documento?"))return;await api.deleteDoc(caso.id,did);setDocs(p=>p.filter(d=>d.id!==did))};
-  const tabs=[{id:"resumo",label:"Resumo"},{id:"emails",label:`Emails (${(caso.emails||[]).length})`},{id:"timesheet",label:"Timesheet"},{id:"docs",label:`Docs (${docs.length})`}];
+  const handleAnalisar=async()=>{
+    if(!confirm("Analisar documentos do Dropbox e enriquecer o resumo do caso?"))return;
+    setAnalisando(true);
+    try{
+      const r=await api.analisarDocs(caso.id);
+      setCaseData(prev=>({...prev,summary:r.summary}));
+      setTab("resumo");
+      alert("Resumo atualizado com base em: "+r.docs_analisados.join(", "));
+    }catch(e){alert("Erro: "+e.message);}
+    finally{setAnalisando(false);}
+  };
+  const tabs=[{id:"resumo",label:"📋 Resumo"},{id:"emails",label:`📧 Emails (${(caso.emails||[]).length})`},{id:"timesheet",label:"⏱ Timesheet"},{id:"docs",label:`📂 Docs (${docs.length})`}];
   const th={padding:"10px 14px",fontSize:11,letterSpacing:1,color:C.muted,fontWeight:700,borderBottom:`2px solid ${C.border}`,textAlign:"left",background:C.light};
   const td={padding:"12px 14px",fontSize:13,borderBottom:`1px solid ${C.border}`};
   return(
@@ -260,8 +272,10 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <h3 style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1,margin:0}}>DOCUMENTOS</h3>
               <div style={{display:"flex",gap:8}}>
-                <input ref={fileRef} type="file" multiple style={{display:"none"}} onChange={handleUpload} accept="*/*"/>
+                {docs.length>0&&docs[0].url&&<a href={docs[0].url} target="_blank" rel="noopener noreferrer" style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.border}`,background:"#fff",color:C.dark,fontWeight:600,cursor:"pointer",fontSize:13,textDecoration:"none",display:"flex",alignItems:"center",gap:6}}>📂 Abrir no Dropbox</a>}
+              <input ref={fileRef} type="file" multiple style={{display:"none"}} onChange={handleUpload} accept="*/*"/>
                 <button onClick={()=>fileRef.current.click()} disabled={uploading} style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.primary}`,background:uploading?"#e8f4ff":C.primary,color:uploading?C.primary:"#fff",fontWeight:700,cursor:uploading?"default":"pointer",fontSize:13}}>{uploading?"Enviando...":"📎 Anexar Arquivo"}</button>
+                <button onClick={handleAnalisar} disabled={analisando} style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.success}`,background:analisando?"#e8f4ff":C.success,color:analisando?C.success:"#fff",fontWeight:700,cursor:analisando?"default":"pointer",fontSize:13}}>{analisando?"Analisando...":"🔍 Analisar Docs"}</button>
               </div>
             </div>
             {docs.length===0
@@ -276,7 +290,7 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
                     <div key={doc.id||i} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 16px",display:"flex",alignItems:"center",gap:10,background:C.light,minWidth:200,maxWidth:280}} onMouseEnter={e=>e.currentTarget.style.borderColor=C.primary} onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
                       <span style={{fontSize:22,flexShrink:0}}>{icon}</span>
                       <div style={{flex:1,minWidth:0}}>
-                        <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{fontSize:13,color:C.dark,fontWeight:500,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:"none"}} title={doc.nome}>{doc.nome}</a>
+                        <div style={{fontSize:13,color:C.dark,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={doc.nome}>{doc.nome}</div>
                         {doc.tamanho>0&&<div style={{fontSize:11,color:C.muted,marginTop:2}}>{fmt(doc.tamanho)}</div>}
                       </div>
                       <button onClick={()=>handleDelDoc(doc.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14,flexShrink:0}} title="Remover">✕</button>

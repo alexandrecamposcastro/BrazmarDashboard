@@ -181,6 +181,9 @@ async function addDoc({ case_id, nome, url, public_id, tamanho, uploaded_by }) {
   const d = await client.execute({ sql: "SELECT * FROM docs WHERE id=?", args: [Number(r.lastInsertRowid)] });
   return { ...d.rows[0], id: Number(d.rows[0].id) };
 }
+async function updateDoc(id, url) {
+  await client.execute({ sql: "UPDATE docs SET url=? WHERE id=?", args: [url, Number(id)] });
+}
 async function findDoc(id) {
   const r = await client.execute({ sql: "SELECT * FROM docs WHERE id=?", args: [Number(id)] });
   return r.rows[0] || null;
@@ -191,4 +194,4 @@ async function deleteDoc(id, case_id) {
   return doc;
 }
 
-module.exports = { init, findUserByEmail, findUserById, createUser, listUsers, listCases, findCase, findCaseByRef, findUnassignedByVessel, createCase, updateCase, deleteCase, listEmailsForCase, addEmail, listTimesheetForCase, addTimesheet, deleteTimesheet, listDocsForCase, addDoc, deleteDoc };
+module.exports = { init, findUserByEmail, findUserById, createUser, listUsers, listCases, findCase, findCaseByRef, findUnassignedByVessel, updateDoc, createCase, updateCase, deleteCase, listEmailsForCase, addEmail, listTimesheetForCase, addTimesheet, deleteTimesheet, listDocsForCase, addDoc, deleteDoc };
