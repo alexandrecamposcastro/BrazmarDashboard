@@ -157,10 +157,13 @@ app.post("/api/cases/:id/docs", auth, upload.array("files", 20), async (req, res
     const caso = await db.findCase(req.params.id);
     if (!caso) return res.status(404).json({ error: "Caso nao encontrado" });
     const saved = [];
-    // Gera link da pasta uma vez só (vale pra todos os arquivos)
     const pastaUrl = await dropbox.linkPasta(caso.vessel).catch(() => "");
     for (const file of req.files) {
       const result = await dropbox.uploadArquivo(caso.vessel, file.originalname, file.buffer);
+      if (!result.path_display) {
+        console.error("Dropbox upload falhou:", JSON.stringify(result));
+        throw new Error(result.error_summary || result._raw || "Dropbox nao retornou path do arquivo");
+      }
       const doc = await db.addDoc({ case_id: caso.id, nome: file.originalname, url: pastaUrl || "", public_id: result.path_display, tamanho: file.size, uploaded_by: req.user.id });
       saved.push(doc);
     }

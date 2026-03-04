@@ -2,11 +2,17 @@
 const https = require("https");
 
 const DROPBOX_TOKEN = () => process.env.DROPBOX_TOKEN;
-const BASE_PATH = "/BRAZMAR - Relatórios/Relatorios em andamento";
+const BASE_PATH = "/BRAZMAR - Relatorios/Relatorios em andamento";
+
+// Remove prefixos náuticos do nome do navio
+function limparNomeNavio(vesselName) {
+  const prefixos = /^(MV|MS|MT|M[/]V|M[/]T|SS|SV|RV|FV|MB)\s+/i;
+  return vesselName.replace(prefixos, "").trim().toUpperCase();
+}
 
 // Monta o caminho da pasta do caso no Dropbox — sempre BRAZMAR - {VESSEL}
 function casePath(vesselName) {
-  return `${BASE_PATH}/BRAZMAR - ${vesselName.toUpperCase()}`;
+  return `${BASE_PATH}/BRAZMAR - ${limparNomeNavio(vesselName)}`;
 }
 
 // Monta o caminho da subpasta de docs
@@ -35,8 +41,10 @@ function dropboxRequest(endpoint, body, isContent = false) {
       res.on("end", () => {
         const buf = Buffer.concat(chunks);
         if (isContent) return resolve(buf);
-        try { resolve(JSON.parse(buf.toString())); }
-        catch { resolve(buf.toString()); }
+        const text = buf.toString();
+        if (!text || !text.trim()) return resolve({});
+        try { resolve(JSON.parse(text)); }
+        catch { resolve({ _raw: text }); }
       });
     });
     req.on("error", reject);
