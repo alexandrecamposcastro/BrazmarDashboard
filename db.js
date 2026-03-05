@@ -67,11 +67,9 @@ async function init() {
     );
   `);
   // Migracoes incrementais para bancos já existentes
-  try { await client.executeMultiple(`
-    ALTER TABLE timesheet ADD COLUMN nome_manual TEXT DEFAULT '';
-    ALTER TABLE timesheet ADD COLUMN sigla TEXT DEFAULT '';
-    ALTER TABLE timesheet ADD COLUMN fonte TEXT DEFAULT 'manual';
-  `); } catch(e) { /* colunas já existem */ }
+  try { await client.executeMultiple("ALTER TABLE timesheet ADD COLUMN nome_manual TEXT DEFAULT ''"); } catch(e) {}
+  try { await client.executeMultiple("ALTER TABLE timesheet ADD COLUMN sigla TEXT DEFAULT ''"); } catch(e) {}
+  try { await client.executeMultiple("ALTER TABLE timesheet ADD COLUMN fonte TEXT DEFAULT 'manual'"); } catch(e) {}
 }
 
 // ── USERS ──────────────────────────────────────────────────────────────────
