@@ -228,7 +228,17 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <h3 style={{fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1,margin:0}}>TIMESHEET</h3>
-              <span style={{fontSize:14,fontWeight:700,color:C.primary,background:"#e8f4ff",padding:"4px 14px",borderRadius:20}}>Total: {totalH.toFixed(1)}h</span>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <span style={{fontSize:14,fontWeight:700,color:C.primary,background:"#e8f4ff",padding:"4px 14px",borderRadius:20}}>Total: {totalH.toFixed(1)}h</span>
+                {timesheet.length>0&&(
+                  <a
+                    href={`/api/cases/${caso.id}/timesheet/export`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.primary}`,background:"#fff",color:C.primary,fontWeight:700,cursor:"pointer",fontSize:12,textDecoration:"none",display:"flex",alignItems:"center",gap:5}}
+                  >📄 Exportar .docx</a>
+                )}
+              </div>
             </div>
             <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"flex-end"}}>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -254,8 +264,8 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
                     {timesheet.map(t=>(
                       <tr key={t.id}>
                         <td style={{...td,color:C.muted,fontSize:12,whiteSpace:"nowrap"}}>{t.data}</td>
-                        <td style={td}><span style={{background:C.primary,color:"#fff",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700,letterSpacing:1}}>{sigla(t.usuario)}</span></td>
-                        <td style={td}>{t.atividade}</td>
+                        <td style={td}><span style={{background:t.fonte==="bot"?"#e8f4ff":C.primary,color:t.fonte==="bot"?C.primary:"#fff",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700,letterSpacing:1}}>{t.sigla||sigla(t.usuario)}</span></td>
+                        <td style={td}>{t.atividade}{t.fonte==="bot"&&<span style={{marginLeft:6,fontSize:10,color:C.muted,background:"#f5f5f5",padding:"1px 6px",borderRadius:4}}>auto</span>}</td>
                         <td style={td}><span style={{fontWeight:700,color:C.primary,background:"#e8f4ff",padding:"2px 10px",borderRadius:10}}>{t.horas}h</span></td>
                         <td style={td}><button onClick={()=>handleDelTime(t.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}} title="Remover">🗑</button></td>
                       </tr>

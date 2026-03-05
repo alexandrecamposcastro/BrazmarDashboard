@@ -67,10 +67,10 @@ async function init() {
       FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
     );
   `);
-  // Migracao: adiciona nome_manual se nao existir (bancos ja criados)
-  try {
-    await client.execute("ALTER TABLE timesheet ADD COLUMN nome_manual TEXT DEFAULT ''");
-  } catch(e) { /* coluna ja existe */ }
+  // Migracoes incrementais
+  try { await client.execute("ALTER TABLE timesheet ADD COLUMN nome_manual TEXT DEFAULT ''"); } catch(e) {}
+  try { await client.execute("ALTER TABLE timesheet ADD COLUMN sigla TEXT DEFAULT ''"); } catch(e) {}
+  try { await client.execute("ALTER TABLE timesheet ADD COLUMN fonte TEXT DEFAULT 'manual'"); } catch(e) {} // 'manual' | 'bot'
 }
 
 // ── USERS ──────────────────────────────────────────────────────────────────
@@ -161,15 +161,27 @@ async function addEmail({ case_id, de, assunto, resumo }) {
 
 // ── TIMESHEET ──────────────────────────────────────────────────────────────
 async function listTimesheetForCase(case_id) {
-  const r = await client.execute({ sql: "SELECT t.*, u.nome as usuario_nome FROM timesheet t JOIN users u ON t.user_id = u.id WHERE t.case_id = ? ORDER BY t.created_at ASC", args: [Number(case_id)] });
-  return r.rows.map(t => ({ ...t, id: Number(t.id), usuario: t.nome_manual || t.usuario_nome }));
+  const r = await client.execute({ sql: "SELECT t.*, u.nome as usuario_nome FROM timesheet t LEFT JOIN users u ON t.user_id = u.id WHERE t.case_id = ? ORDER BY t.data ASC, t.created_at ASC", args: [Number(case_id)] });
+  return r.rows.map(t => ({
+    ...t,
+    id: Number(t.id),
+    sigla: t.sigla || (t.nome_manual ? t.nome_manual.toUpperCase().substring(0,3) : (t.usuario_nome ? t.usuario_nome.split(" ").map(n=>n[0]).join("").substring(0,3) : "?")),
+    usuario: t.nome_manual || t.usuario_nome || ""
+  }));
 }
 async function addTimesheet({ case_id, user_id, nome_manual, atividade, horas }) {
   const data = new Date().toLocaleDateString("pt-BR");
-  const r = await client.execute({ sql: "INSERT INTO timesheet (case_id, user_id, nome_manual, atividade, horas, data) VALUES (?, ?, ?, ?, ?, ?)", args: [Number(case_id), Number(user_id), nome_manual||"", atividade, Number(horas), data] });
-  const row = await client.execute({ sql: "SELECT t.*, u.nome as usuario_nome FROM timesheet t JOIN users u ON t.user_id = u.id WHERE t.id = ?", args: [Number(r.lastInsertRowid)] });
+  const r = await client.execute({ sql: "INSERT INTO timesheet (case_id, user_id, nome_manual, sigla, atividade, horas, data, fonte) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')", args: [Number(case_id), Number(user_id), nome_manual||"", nome_manual||"", atividade, Number(horas), data] });
+  const row = await client.execute({ sql: "SELECT t.*, u.nome as usuario_nome FROM timesheet t LEFT JOIN users u ON t.user_id = u.id WHERE t.id = ?", args: [Number(r.lastInsertRowid)] });
   const t = row.rows[0];
-  return { ...t, id: Number(t.id), usuario: t.nome_manual || t.usuario_nome };
+  return { ...t, id: Number(t.id), sigla: t.sigla || nome_manual || "", usuario: t.nome_manual || t.usuario_nome };
+}
+async function addTimesheetBot({ case_id, sigla, atividade, horas, data }) {
+  // Entrada gerada automaticamente pelo bot — sem user_id
+  const r = await client.execute({ sql: "INSERT INTO timesheet (case_id, user_id, sigla, atividade, horas, data, fonte) VALUES (?, NULL, ?, ?, ?, ?, 'bot')", args: [Number(case_id), sigla||"", atividade, Number(horas||0), data||new Date().toLocaleDateString("pt-BR")] });
+  const row = await client.execute({ sql: "SELECT * FROM timesheet WHERE id=?", args: [Number(r.lastInsertRowid)] });
+  const t = row.rows[0];
+  return { ...t, id: Number(t.id) };
 }
 async function deleteTimesheet(id, case_id) {
   await client.execute({ sql: "DELETE FROM timesheet WHERE id=? AND case_id=?", args: [Number(id), Number(case_id)] });
@@ -198,4 +210,4 @@ async function deleteDoc(id, case_id) {
   return doc;
 }
 
-module.exports = { init, findUserByEmail, findUserById, createUser, listUsers, listCases, findCase, findCaseByRef, findUnassignedByVessel, updateDoc, createCase, updateCase, deleteCase, listEmailsForCase, addEmail, listTimesheetForCase, addTimesheet, deleteTimesheet, listDocsForCase, addDoc, deleteDoc };
+module.exports = { init, findUserByEmail, findUserById, createUser, listUsers, listCases, findCase, findCaseByRef, findUnassignedByVessel, updateDoc, createCase, updateCase, deleteCase, listEmailsForCase, addEmail, listTimesheetForCase, addTimesheet, addTimesheetBot, deleteTimesheet, listDocsForCase, addDoc, deleteDoc };

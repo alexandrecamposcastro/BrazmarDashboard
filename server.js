@@ -9,6 +9,7 @@ const fs = require("fs");
 const https = require("https");
 const db = require("./db");
 const dropbox = require("./dropbox");
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, ShadingType } = require("docx");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -265,7 +266,7 @@ function calcularSimilaridade(novo, existente) {
 
 app.post("/api/webhook/email", async (req, res) => {
   try {
-    const { vessel, cliente, porto, tipo, urgencia, summary, emailBody, de, assunto, ref, eta, etb, ets } = req.body;
+    const { vessel, cliente, porto, tipo, urgencia, summary, emailBody, de, assunto, ref, eta, etb, ets, timesheet_entry } = req.body;
     if (!vessel) return res.status(400).json({ error: "vessel obrigatório" });
 
     const resumoEmail = emailBody || assunto || "";
@@ -295,12 +296,18 @@ app.post("/api/webhook/email", async (req, res) => {
       // Se o caso não tinha ref e agora tem, atualiza
       if (ref && !melhorCaso.ref) { updates.ref = ref; updates.status = "em_andamento"; }
       if (Object.keys(updates).length) await db.updateCase(melhorCaso.id, updates);
+      if (timesheet_entry && timesheet_entry.sigla && timesheet_entry.atividade) {
+        await db.addTimesheetBot({ case_id: melhorCaso.id, ...timesheet_entry });
+      }
       return res.json({ linked: true, case_id: melhorCaso.id, method: melhorScore === 100 ? "ref" : "similarity", score: melhorScore });
     }
 
     // Nenhum caso similar → cria caso novo
     const caso = await db.createCase({ vessel, cliente, porto, tipo, urgencia, summary, eta: eta||'', etb: etb||'', ets: ets||'', ref: ref||'', status: ref ? 'em_andamento' : 'nao_atribuido' });
     await db.addEmail({ case_id: caso.id, de: de||"", assunto: assunto||"", resumo: resumoEmail });
+    if (timesheet_entry && timesheet_entry.sigla && timesheet_entry.atividade) {
+      await db.addTimesheetBot({ case_id: caso.id, ...timesheet_entry });
+    }
     res.status(201).json({ linked: false, case_id: caso.id });
 
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -334,6 +341,179 @@ app.get("/api/dropbox/callback", async (req, res) => {
     res.send("<h2>❌ Erro</h2><pre>" + JSON.stringify(r, null, 2) + "</pre>");
   }
 });
+// ── TIMESHEET EXPORT .DOCX ──────────────────────────────────────────────────
+app.get("/api/cases/:id/timesheet/export", auth, async (req, res) => {
+  try {
+    const caso = await db.findCase(req.params.id);
+    if (!caso) return res.status(404).json({ error: "Caso não encontrado" });
+    const entries = await db.listTimesheetForCase(req.params.id);
+
+    const BORDER = { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" };
+    const cellBorders = { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER };
+    const HEADER_BG = { type: ShadingType.CLEAR, fill: "1B3A6B" };
+
+    const makeHeaderCell = (text, width) => new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      shading: HEADER_BG,
+      borders: cellBorders,
+      verticalAlign: VerticalAlign.CENTER,
+      children: [new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text, bold: true, color: "FFFFFF", size: 18, font: "Arial" })]
+      })]
+    });
+
+    const makeCell = (text, width, opts = {}) => new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      borders: cellBorders,
+      verticalAlign: VerticalAlign.CENTER,
+      children: [new Paragraph({
+        alignment: opts.center ? AlignmentType.CENTER : AlignmentType.LEFT,
+        children: [new TextRun({ text: String(text||""), size: 18, font: "Arial", bold: opts.bold||false, color: opts.color||"000000" })]
+      })]
+    });
+
+    // Agrupar por sigla para calcular totais
+    const totaisSigla = {};
+    entries.forEach(e => {
+      const s = e.sigla || "?";
+      totaisSigla[s] = (totaisSigla[s] || 0) + Number(e.horas);
+    });
+    const totalGeral = entries.reduce((s, e) => s + Number(e.horas), 0);
+
+    // Linhas de dados
+    const dataRows = entries.map(e => new TableRow({
+      children: [
+        makeCell(e.data || "", 1600, { center: true }),
+        makeCell(e.sigla || "", 800, { center: true, bold: true }),
+        makeCell(e.atividade || "", 6000),
+        makeCell(Number(e.horas).toFixed(1), 900, { center: true, bold: true, color: "1B3A6B" }),
+        makeCell(e.fonte === "bot" ? "Auto" : "", 900, { center: true, color: "999999" }),
+      ]
+    }));
+
+    // Linha de total
+    const totalRow = new TableRow({
+      children: [
+        makeCell("", 1600),
+        makeCell("", 800),
+        new TableCell({
+          width: { size: 6000, type: WidthType.DXA },
+          borders: cellBorders,
+          shading: { type: ShadingType.CLEAR, fill: "F0F4FF" },
+          children: [new Paragraph({
+            alignment: AlignmentType.RIGHT,
+            children: [new TextRun({ text: "TOTAL:", bold: true, size: 18, font: "Arial" })]
+          })]
+        }),
+        new TableCell({
+          width: { size: 900, type: WidthType.DXA },
+          borders: cellBorders,
+          shading: { type: ShadingType.CLEAR, fill: "F0F4FF" },
+          verticalAlign: VerticalAlign.CENTER,
+          children: [new Paragraph({
+            alignment: AlignmentType.CENTER,
+            children: [new TextRun({ text: totalGeral.toFixed(1), bold: true, size: 18, font: "Arial", color: "1B3A6B" })]
+          })]
+        }),
+        makeCell("", 900),
+      ]
+    });
+
+    const table = new Table({
+      width: { size: 10200, type: WidthType.DXA },
+      rows: [
+        new TableRow({
+          tableHeader: true,
+          children: [
+            makeHeaderCell("Date", 1600),
+            makeHeaderCell("Name", 800),
+            makeHeaderCell("Narrative", 6000),
+            makeHeaderCell("Hours", 900),
+            makeHeaderCell("N/C", 900),
+          ]
+        }),
+        ...dataRows,
+        totalRow,
+      ]
+    });
+
+    const doc = new Document({
+      styles: { default: { document: { run: { font: "Arial", size: 20 } } } },
+      sections: [{
+        properties: {
+          page: {
+            size: { width: 12240, height: 15840 },
+            margin: { top: 1440, right: 1080, bottom: 1440, left: 1080 }
+          }
+        },
+        children: [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 60 },
+            children: [new TextRun({ text: "BRAZMAR Marine Services", bold: true, size: 28, font: "Arial", color: "1B3A6B" })]
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 400 },
+            children: [new TextRun({ text: "Breakdown of Time", size: 22, font: "Arial", color: "666666" })]
+          }),
+          new Table({
+            width: { size: 10200, type: WidthType.DXA },
+            rows: [
+              new TableRow({ children: [
+                new TableCell({
+                  width: { size: 2400, type: WidthType.DXA },
+                  borders: cellBorders,
+                  shading: { type: ShadingType.CLEAR, fill: "F5F7FA" },
+                  children: [new Paragraph({ children: [new TextRun({ text: "Breakdown of Time", bold: true, size: 18, font: "Arial" })] })]
+                }),
+                new TableCell({
+                  width: { size: 7800, type: WidthType.DXA },
+                  borders: cellBorders,
+                  children: [new Paragraph({ children: [new TextRun({ text: "", size: 18 })] })]
+                })
+              ]}),
+              new TableRow({ children: [
+                new TableCell({
+                  width: { size: 2400, type: WidthType.DXA },
+                  borders: cellBorders,
+                  shading: { type: ShadingType.CLEAR, fill: "F5F7FA" },
+                  children: [new Paragraph({ children: [new TextRun({ text: "Client", bold: true, size: 18, font: "Arial" })] })]
+                }),
+                new TableCell({
+                  width: { size: 7800, type: WidthType.DXA },
+                  borders: cellBorders,
+                  children: [new Paragraph({ children: [new TextRun({ text: caso.vessel || "", bold: true, size: 18, font: "Arial" })] })]
+                })
+              ]}),
+            ]
+          }),
+          new Paragraph({ spacing: { before: 400, after: 200 }, children: [] }),
+          table,
+          new Paragraph({ spacing: { before: 400 }, children: [] }),
+          // Legenda siglas
+          ...Object.entries(totaisSigla).map(([sigla, total]) =>
+            new Paragraph({
+              spacing: { after: 60 },
+              children: [new TextRun({ text: `${sigla}: ${total.toFixed(1)}h`, size: 16, font: "Arial", color: "555555" })]
+            })
+          ),
+        ]
+      }]
+    });
+
+    const buffer = await Packer.toBuffer(doc);
+    const filename = `BRAZMAR - ${caso.ref || caso.id} - ${caso.vessel} - Timesheet.docx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (e) {
+    console.error("Erro export timesheet:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── CATCH-ALL → React ───────────────────────────────────────────────────────
 app.get("*", (req, res) => {
   const index = path.join(__dirname, "client", "dist", "index.html");
