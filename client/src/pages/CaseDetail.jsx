@@ -231,12 +231,23 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <span style={{fontSize:14,fontWeight:700,color:C.primary,background:"#e8f4ff",padding:"4px 14px",borderRadius:20}}>Total: {totalH.toFixed(1)}h</span>
                 {timesheet.length>0&&(
-                  <a
-                    href={`/api/cases/${caso.id}/timesheet/export`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.primary}`,background:"#fff",color:C.primary,fontWeight:700,cursor:"pointer",fontSize:12,textDecoration:"none",display:"flex",alignItems:"center",gap:5}}
-                  >📄 Exportar .docx</a>
+                  <button
+                    onClick={async()=>{
+                      try{
+                        const token=localStorage.getItem("token");
+                        const r=await fetch(`/api/cases/${caso.id}/timesheet/export`,{headers:{Authorization:`Bearer ${token}`}});
+                        if(!r.ok)throw new Error("Erro ao exportar");
+                        const blob=await r.blob();
+                        const url=URL.createObjectURL(blob);
+                        const a=document.createElement("a");
+                        a.href=url;
+                        a.download=`BRAZMAR - ${caso.ref||caso.id} - ${caso.vessel} - Timesheet.docx`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }catch(e){alert("Erro ao exportar: "+e.message);}
+                    }}
+                    style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.primary}`,background:"#fff",color:C.primary,fontWeight:700,cursor:"pointer",fontSize:12}}
+                  >📄 Exportar .docx</button>
                 )}
               </div>
             </div>
