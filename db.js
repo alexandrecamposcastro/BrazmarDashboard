@@ -66,10 +66,9 @@ async function init() {
       FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
     );
   `);
-  // Migracoes incrementais para bancos já existentes
-  try { await client.executeMultiple("ALTER TABLE timesheet ADD COLUMN nome_manual TEXT DEFAULT ''"); } catch(e) {}
-  try { await client.executeMultiple("ALTER TABLE timesheet ADD COLUMN sigla TEXT DEFAULT ''"); } catch(e) {}
-  try { await client.executeMultiple("ALTER TABLE timesheet ADD COLUMN fonte TEXT DEFAULT 'manual'"); } catch(e) {}
+  // Migracoes incrementais
+  try { await client.execute("ALTER TABLE timesheet ADD COLUMN sigla TEXT DEFAULT ''"); } catch(e) {}
+  try { await client.execute("ALTER TABLE timesheet ADD COLUMN fonte TEXT DEFAULT 'manual'"); } catch(e) {}
 }
 
 // ── USERS ──────────────────────────────────────────────────────────────────
