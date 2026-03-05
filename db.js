@@ -7,70 +7,70 @@ const client = createClient({
 });
 
 async function init() {
-  await client.executeMultiple(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nome TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      senha_hash TEXT NOT NULL,
-      cargo TEXT NOT NULL DEFAULT 'Operacional',
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS cases (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ref TEXT DEFAULT '',
-      vessel TEXT NOT NULL,
-      armador TEXT DEFAULT '',
-      cliente TEXT DEFAULT '',
-      porto TEXT DEFAULT '',
-      tipo TEXT DEFAULT 'fixed_fee',
-      status TEXT DEFAULT 'nao_atribuido',
-      urgencia TEXT DEFAULT 'BAIXA',
-      eta TEXT DEFAULT '',
-      etb TEXT DEFAULT '',
-      ets TEXT DEFAULT '',
-      profissionais TEXT DEFAULT '[]',
-      summary TEXT DEFAULT '',
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS emails (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      case_id INTEGER NOT NULL,
-      de TEXT NOT NULL,
-      assunto TEXT DEFAULT '',
-      resumo TEXT NOT NULL,
-      data_recebido TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
-    );
-    CREATE TABLE IF NOT EXISTS timesheet (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      case_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
-      nome_manual TEXT DEFAULT '',
-      atividade TEXT NOT NULL,
-      horas REAL NOT NULL,
-      data TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    );
-    CREATE TABLE IF NOT EXISTS docs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      case_id INTEGER NOT NULL,
-      nome TEXT NOT NULL,
-      url TEXT NOT NULL,
-      public_id TEXT DEFAULT '',
-      tamanho INTEGER DEFAULT 0,
-      uploaded_by INTEGER,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
-    );
-  `);
-  // Migracoes incrementais
+  await client.execute(`CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    senha_hash TEXT NOT NULL,
+    cargo TEXT NOT NULL DEFAULT 'Operacional',
+    created_at TEXT DEFAULT (datetime('now'))
+  )`);
+  await client.execute(`CREATE TABLE IF NOT EXISTS cases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ref TEXT DEFAULT '',
+    vessel TEXT NOT NULL,
+    armador TEXT DEFAULT '',
+    cliente TEXT DEFAULT '',
+    porto TEXT DEFAULT '',
+    tipo TEXT DEFAULT 'fixed_fee',
+    status TEXT DEFAULT 'nao_atribuido',
+    urgencia TEXT DEFAULT 'BAIXA',
+    eta TEXT DEFAULT '',
+    etb TEXT DEFAULT '',
+    ets TEXT DEFAULT '',
+    profissionais TEXT DEFAULT '[]',
+    summary TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`);
+  await client.execute(`CREATE TABLE IF NOT EXISTS emails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id INTEGER NOT NULL,
+    de TEXT NOT NULL,
+    assunto TEXT DEFAULT '',
+    resumo TEXT NOT NULL,
+    data_recebido TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
+  )`);
+  await client.execute(`CREATE TABLE IF NOT EXISTS timesheet (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id INTEGER NOT NULL,
+    user_id INTEGER,
+    nome_manual TEXT DEFAULT '',
+    sigla TEXT DEFAULT '',
+    fonte TEXT DEFAULT 'manual',
+    atividade TEXT NOT NULL,
+    horas REAL NOT NULL,
+    data TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )`);
+  await client.execute(`CREATE TABLE IF NOT EXISTS docs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id INTEGER NOT NULL,
+    nome TEXT NOT NULL,
+    url TEXT NOT NULL,
+    public_id TEXT DEFAULT '',
+    tamanho INTEGER DEFAULT 0,
+    uploaded_by INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
+  )`);
+  // Migracoes incrementais para bancos já existentes
   try { await client.execute("ALTER TABLE timesheet ADD COLUMN nome_manual TEXT DEFAULT ''"); } catch(e) {}
   try { await client.execute("ALTER TABLE timesheet ADD COLUMN sigla TEXT DEFAULT ''"); } catch(e) {}
-  try { await client.execute("ALTER TABLE timesheet ADD COLUMN fonte TEXT DEFAULT 'manual'"); } catch(e) {} // 'manual' | 'bot'
+  try { await client.execute("ALTER TABLE timesheet ADD COLUMN fonte TEXT DEFAULT 'manual'"); } catch(e) {}
 }
 
 // ── USERS ──────────────────────────────────────────────────────────────────
