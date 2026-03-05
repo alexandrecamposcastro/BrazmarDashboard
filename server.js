@@ -153,7 +153,7 @@ app.delete("/api/cases/:id/timesheet/:tid", auth, async (req, res) => {
 // ── DOCS ────────────────────────────────────────────────────────────────────
 app.post("/api/cases/:id/docs", auth, upload.array("files", 20), async (req, res) => {
   try {
-    if (!process.env.DROPBOX_TOKEN) return res.status(503).json({ error: "DROPBOX_TOKEN nao configurado no Vercel." });
+    if (!process.env.DROPBOX_REFRESH_TOKEN && !process.env.DROPBOX_TOKEN) return res.status(503).json({ error: "DROPBOX_TOKEN nao configurado no Vercel." });
     const caso = await db.findCase(req.params.id);
     if (!caso) return res.status(404).json({ error: "Caso nao encontrado" });
     const saved = [];
@@ -181,7 +181,7 @@ app.delete("/api/cases/:id/docs/:did", auth, async (req, res) => {
 
 app.post("/api/cases/:id/analisar-docs", auth, async (req, res) => {
   try {
-    if (!process.env.DROPBOX_TOKEN) return res.status(503).json({ error: "DROPBOX_TOKEN nao configurado." });
+    if (!process.env.DROPBOX_REFRESH_TOKEN && !process.env.DROPBOX_TOKEN) return res.status(503).json({ error: "DROPBOX_TOKEN nao configurado." });
     if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: "GEMINI_API_KEY nao configurado." });
     const caso = await db.findCase(req.params.id);
     if (!caso) return res.status(404).json({ error: "Caso nao encontrado" });
@@ -306,6 +306,34 @@ app.post("/api/webhook/email", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── DROPBOX OAUTH SETUP (rota temporária para obter refresh token) ──────────
+app.get("/api/dropbox/auth", (req, res) => {
+  const key = process.env.DROPBOX_APP_KEY;
+  if (!key) return res.status(503).send("DROPBOX_APP_KEY não configurado no Vercel.");
+  const url = "https://www.dropbox.com/oauth2/authorize?client_id=" + key + "&response_type=code&token_access_type=offlineresponse_type=code&token_access_type=offline&scope=files.content.read%20files.content.write%20files.metadata.read%20files.metadata.write&redirect_uri=" + encodeURIComponent(process.env.APP_URL + "/api/dropbox/callback");
+  res.redirect(url);
+});
+
+app.get("/api/dropbox/callback", async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.status(400).send("Código não recebido.");
+  const key = process.env.DROPBOX_APP_KEY;
+  const secret = process.env.DROPBOX_APP_SECRET;
+  const redirectUri = process.env.APP_URL + "/api/dropbox/callback";
+  const body = new URLSearchParams({ code, grant_type: "authorization_code", redirect_uri: redirectUri });
+  const creds = Buffer.from(key + ":" + secret).toString("base64");
+  const r = await new Promise((resolve, reject) => {
+    const data = body.toString();
+    const opts = { hostname: "api.dropboxapi.com", path: "/oauth2/token", method: "POST", headers: { "Authorization": "Basic " + creds, "Content-Type": "application/x-www-form-urlencoded" } };
+    const req2 = https.request(opts, (res2) => { let ch = []; res2.on("data", c => ch.push(c)); res2.on("end", () => resolve(JSON.parse(Buffer.concat(ch).toString()))); });
+    req2.on("error", reject); req2.write(data); req2.end();
+  });
+  if (r.refresh_token) {
+    res.send("<h2>✅ Sucesso!</h2><p>Adicione esta variável no Vercel:</p><p><b>DROPBOX_REFRESH_TOKEN</b> = <code>" + r.refresh_token + "</code></p><p>Depois pode remover DROPBOX_TOKEN, DROPBOX_APP_KEY e DROPBOX_APP_SECRET se quiser.</p>");
+  } else {
+    res.send("<h2>❌ Erro</h2><pre>" + JSON.stringify(r, null, 2) + "</pre>");
+  }
+});
 // ── CATCH-ALL → React ───────────────────────────────────────────────────────
 app.get("*", (req, res) => {
   const index = path.join(__dirname, "client", "dist", "index.html");

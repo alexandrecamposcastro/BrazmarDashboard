@@ -1,7 +1,34 @@
 // ── DROPBOX INTEGRATION ──────────────────────────────────────────────────────
 const https = require("https");
 
-const DROPBOX_TOKEN = () => process.env.DROPBOX_TOKEN;
+// Gerencia access token — renova automaticamente usando o refresh token
+let _accessToken = null;
+let _tokenExpiry = 0;
+
+async function getAccessToken() {
+  if (_accessToken && Date.now() < _tokenExpiry - 60000) return _accessToken;
+  const key = process.env.DROPBOX_APP_KEY;
+  const secret = process.env.DROPBOX_APP_SECRET;
+  const refresh = process.env.DROPBOX_REFRESH_TOKEN;
+  console.log("getAccessToken: refresh=", refresh ? refresh.substring(0,10)+"..." : "NAO CONFIGURADO", "key=", key ? "OK" : "NAO CONFIGURADO");
+  if (!refresh) return process.env.DROPBOX_TOKEN || "";
+  const body = "grant_type=refresh_token&refresh_token=" + encodeURIComponent(refresh);
+  const creds = Buffer.from(key + ":" + secret).toString("base64");
+  const result = await new Promise((resolve, reject) => {
+    const opts = { hostname: "api.dropboxapi.com", path: "/oauth2/token", method: "POST", headers: { "Authorization": "Basic " + creds, "Content-Type": "application/x-www-form-urlencoded" } };
+    const req = https.request(opts, (res) => { let ch = []; res.on("data", c => ch.push(c)); res.on("end", () => resolve(JSON.parse(Buffer.concat(ch).toString()))); });
+    req.on("error", reject); req.write(body); req.end();
+  });
+  console.log("Token refresh result:", JSON.stringify({token_type: result.token_type, expires_in: result.expires_in, has_access_token: !!result.access_token, token_preview: result.access_token ? result.access_token.substring(0,20) : null, error: result.error}));
+  if (!result.access_token) {
+    console.error("Dropbox token refresh falhou:", JSON.stringify(result));
+    throw new Error("Nao foi possivel renovar o token do Dropbox: " + (result.error_description || result.error || JSON.stringify(result)));
+  }
+  _accessToken = result.access_token;
+  _tokenExpiry = Date.now() + (result.expires_in || 14400) * 1000;
+  console.log("Dropbox token renovado com sucesso, expira em", result.expires_in, "s");
+  return _accessToken;
+}
 const BASE_PATH = "/BRAZMAR - Relatórios/Relatorios em andamento";
 
 // Remove prefixos náuticos do nome do navio
@@ -21,7 +48,8 @@ function docsPath(vesselName) {
 }
 
 // Chamada genérica à API do Dropbox
-function dropboxRequest(endpoint, body, isContent = false) {
+async function dropboxRequest(endpoint, body, isContent = false) {
+  const token = await getAccessToken();
   return new Promise((resolve, reject) => {
     const data = isContent ? body : JSON.stringify(body);
     const options = {
@@ -29,7 +57,7 @@ function dropboxRequest(endpoint, body, isContent = false) {
       path: `/2/${endpoint}`,
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${DROPBOX_TOKEN()}`,
+        "Authorization": `Bearer ${token}`,
         "Content-Type": isContent ? "application/octet-stream" : "application/json",
       }
     };
@@ -69,16 +97,19 @@ async function garantirPastaCaso(vesselName) {
 // Upload de um arquivo para o Dropbox
 async function uploadArquivo(vesselName, filename, buffer) {
   await garantirPastaCaso(vesselName);
+  const token = await getAccessToken();
   const path = `${docsPath(vesselName)}/${filename}`;
+  console.log("Dropbox upload path:", path);
+  console.log("Dropbox token preview:", token.substring(0, 20) + "...");
   const result = await new Promise((resolve, reject) => {
     const options = {
       hostname: "content.dropboxapi.com",
       path: "/2/files/upload",
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${DROPBOX_TOKEN()}`,
+        "Authorization": `Bearer ${token}`,
         "Content-Type": "application/octet-stream",
-        "Dropbox-API-Arg": JSON.stringify({ path, mode: "add", autorename: true, mute: false })
+        "Dropbox-API-Arg": JSON.stringify({ path, mode: "add", autorename: true, mute: false }).replace(/[\u0080-\uFFFF]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4,"0"))
       }
     };
     const req = https.request(options, (res) => {
@@ -114,13 +145,14 @@ async function listarDocs(vesselName) {
 
 // Baixa o conteúdo de um arquivo do Dropbox (retorna Buffer)
 async function baixarArquivo(dropboxPath) {
+  const token = await getAccessToken();
   return new Promise((resolve, reject) => {
     const options = {
       hostname: "content.dropboxapi.com",
       path: "/2/files/download",
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${DROPBOX_TOKEN()}`,
+        "Authorization": `Bearer ${token}`,
         "Dropbox-API-Arg": JSON.stringify({ path: dropboxPath })
       }
     };
