@@ -234,9 +234,9 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
                   <button
                     onClick={async()=>{
                       try{
-                        const token=localStorage.getItem("token");
+                        const token=localStorage.getItem("brazmar_token");
                         const r=await fetch(`/api/cases/${caso.id}/timesheet/export`,{headers:{Authorization:`Bearer ${token}`}});
-                        if(!r.ok)throw new Error("Erro ao exportar");
+                        if(!r.ok){const err=await r.text();throw new Error(err);}
                         const blob=await r.blob();
                         const url=URL.createObjectURL(blob);
                         const a=document.createElement("a");
