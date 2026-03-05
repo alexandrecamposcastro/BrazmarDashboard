@@ -48,6 +48,8 @@ async function init() {
       case_id INTEGER NOT NULL,
       user_id INTEGER,
       nome_manual TEXT DEFAULT '',
+      sigla TEXT DEFAULT '',
+      fonte TEXT DEFAULT 'manual',
       atividade TEXT NOT NULL,
       horas REAL NOT NULL,
       data TEXT NOT NULL,
@@ -66,9 +68,6 @@ async function init() {
       FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
     );
   `);
-  // Migracoes incrementais
-  try { await client.execute("ALTER TABLE timesheet ADD COLUMN sigla TEXT DEFAULT ''"); } catch(e) {}
-  try { await client.execute("ALTER TABLE timesheet ADD COLUMN fonte TEXT DEFAULT 'manual'"); } catch(e) {}
 }
 
 // ── USERS ──────────────────────────────────────────────────────────────────
