@@ -9,7 +9,6 @@ const fs = require("fs");
 const https = require("https");
 const db = require("./db");
 const dropbox = require("./dropbox");
-const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, ShadingType } = require("docx");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -343,98 +342,125 @@ app.get("/api/dropbox/callback", async (req, res) => {
 // ── TIMESHEET EXPORT .DOCX ──────────────────────────────────────────────────
 app.get("/api/cases/:id/timesheet/export", auth, async (req, res) => {
   try {
-    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, ShadingType } = require("docx");
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, ShadingType, UnderlineType } = require("docx");
     const caso = await db.findCase(req.params.id);
     if (!caso) return res.status(404).json({ error: "Caso não encontrado" });
     const entries = await db.listTimesheetForCase(req.params.id);
 
-    const BORDER = { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" };
-    const cellBorders = { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER };
-    const HEADER_BG = { type: ShadingType.CLEAR, fill: "1B3A6B" };
+    const NO_BORDER  = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+    const BOT_BORDER = { style: BorderStyle.SINGLE, size: 4, color: "000000" };
+    const noBorders  = { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER };
+    const botBorder  = { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER };
 
-    const makeHeaderCell = (text, width) => new TableCell({
+    // Célula sem borda
+    const cell = (text, width, opts = {}) => new TableCell({
       width: { size: width, type: WidthType.DXA },
-      shading: HEADER_BG,
-      borders: cellBorders,
-      verticalAlign: VerticalAlign.CENTER,
+      borders: noBorders,
+      verticalAlign: VerticalAlign.TOP,
       children: [new Paragraph({
-        alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text, bold: true, color: "FFFFFF", size: 18, font: "Arial" })]
+        alignment: opts.center ? AlignmentType.CENTER : opts.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
+        spacing: { before: 40, after: 40 },
+        children: [new TextRun({
+          text: String(text || ""),
+          size: opts.size || 20,
+          font: "Arial",
+          bold: opts.bold || false,
+          color: opts.color || "000000",
+          underline: opts.underline ? { type: UnderlineType.SINGLE } : undefined,
+        })]
       })]
     });
 
-    const makeCell = (text, width, opts = {}) => new TableCell({
+    // Célula com borda inferior (header da tabela principal)
+    const headerCell = (text, width) => new TableCell({
       width: { size: width, type: WidthType.DXA },
-      borders: cellBorders,
-      verticalAlign: VerticalAlign.CENTER,
+      borders: botBorder,
+      verticalAlign: VerticalAlign.BOTTOM,
       children: [new Paragraph({
-        alignment: opts.center ? AlignmentType.CENTER : AlignmentType.LEFT,
-        children: [new TextRun({ text: String(text||""), size: 18, font: "Arial", bold: opts.bold||false, color: opts.color||"000000" })]
+        spacing: { before: 40, after: 80 },
+        children: [new TextRun({ text, size: 20, font: "Arial", bold: true, underline: { type: UnderlineType.SINGLE } })]
       })]
     });
 
-    // Agrupar por sigla para calcular totais
     const totaisSigla = {};
-    entries.forEach(e => {
-      const s = e.sigla || "?";
-      totaisSigla[s] = (totaisSigla[s] || 0) + Number(e.horas);
-    });
+    entries.forEach(e => { const s = e.sigla || "?"; totaisSigla[s] = (totaisSigla[s] || 0) + Number(e.horas); });
     const totalGeral = entries.reduce((s, e) => s + Number(e.horas), 0);
 
-    // Linhas de dados
     const dataRows = entries.map(e => new TableRow({
       children: [
-        makeCell(e.data || "", 1600, { center: true }),
-        makeCell(e.sigla || "", 800, { center: true, bold: true }),
-        makeCell(e.atividade || "", 6000),
-        makeCell(Number(e.horas).toFixed(1), 900, { center: true, bold: true, color: "1B3A6B" }),
-        makeCell(e.fonte === "bot" ? "Auto" : "", 900, { center: true, color: "999999" }),
+        cell(e.data || "", 1500, { center: true }),
+        cell(e.sigla || "", 900, { center: true }),
+        cell("", 100),
+        cell(e.atividade || "", 6300),
+        cell(Number(e.horas).toFixed(1), 900, { center: true }),
+        cell("", 700),
       ]
     }));
 
-    // Linha de total
-    const totalRow = new TableRow({
-      children: [
-        makeCell("", 1600),
-        makeCell("", 800),
-        new TableCell({
-          width: { size: 6000, type: WidthType.DXA },
-          borders: cellBorders,
-          shading: { type: ShadingType.CLEAR, fill: "F0F4FF" },
-          children: [new Paragraph({
-            alignment: AlignmentType.RIGHT,
-            children: [new TextRun({ text: "TOTAL:", bold: true, size: 18, font: "Arial" })]
-          })]
-        }),
-        new TableCell({
-          width: { size: 900, type: WidthType.DXA },
-          borders: cellBorders,
-          shading: { type: ShadingType.CLEAR, fill: "F0F4FF" },
-          verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({
-            alignment: AlignmentType.CENTER,
-            children: [new TextRun({ text: totalGeral.toFixed(1), bold: true, size: 18, font: "Arial", color: "1B3A6B" })]
-          })]
-        }),
-        makeCell("", 900),
+    // Linha separadora antes do total
+    const sepRow = new TableRow({ children: [
+      new TableCell({ width: { size: 10400, type: WidthType.DXA }, columnSpan: 6, borders: { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER }, children: [new Paragraph({ children: [] })] })
+    ]});
+
+    const totalRow = new TableRow({ children: [
+      cell("", 1500),
+      cell("", 900),
+      cell("", 100),
+      new TableCell({
+        width: { size: 6300, type: WidthType.DXA },
+        borders: noBorders,
+        children: [new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          spacing: { before: 80, after: 40 },
+          children: [new TextRun({ text: "TOTAL:", bold: true, size: 20, font: "Arial" })]
+        })]
+      }),
+      new TableCell({
+        width: { size: 900, type: WidthType.DXA },
+        borders: noBorders,
+        children: [new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 80, after: 40 },
+          children: [new TextRun({ text: totalGeral.toFixed(1), bold: true, size: 20, font: "Arial" })]
+        })]
+      }),
+      cell("", 700),
+    ]});
+
+    const mainTable = new Table({
+      width: { size: 10400, type: WidthType.DXA },
+      borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER, insideH: NO_BORDER, insideV: NO_BORDER },
+      rows: [
+        new TableRow({ tableHeader: true, children: [
+          headerCell("Date",      1500),
+          headerCell("Name",      900),
+          new TableCell({ width: { size: 100, type: WidthType.DXA }, borders: botBorder, children: [new Paragraph({ children: [] })] }),
+          headerCell("Narrative", 6300),
+          headerCell("Hours",     900),
+          headerCell("N/C",       700),
+        ]}),
+        ...dataRows,
+        sepRow,
+        totalRow,
       ]
     });
 
-    const table = new Table({
-      width: { size: 10200, type: WidthType.DXA },
+    // Tabela de cabeçalho (Breakdown of Time / Client)
+    const infoTable = new Table({
+      width: { size: 6000, type: WidthType.DXA },
+      borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER, insideH: NO_BORDER, insideV: NO_BORDER },
       rows: [
-        new TableRow({
-          tableHeader: true,
-          children: [
-            makeHeaderCell("Date", 1600),
-            makeHeaderCell("Name", 800),
-            makeHeaderCell("Narrative", 6000),
-            makeHeaderCell("Hours", 900),
-            makeHeaderCell("N/C", 900),
-          ]
-        }),
-        ...dataRows,
-        totalRow,
+        new TableRow({ children: [
+          new TableCell({ width: { size: 2200, type: WidthType.DXA }, borders: { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER }, children: [new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: "Breakdown of Time", bold: true, size: 20, font: "Arial" })] })] }),
+          new TableCell({ width: { size: 3800, type: WidthType.DXA }, borders: { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER }, children: [new Paragraph({ children: [] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 2200, type: WidthType.DXA }, borders: noBorders, children: [new Paragraph({ spacing: { before: 80, after: 60 }, children: [new TextRun({ text: "Client", bold: true, size: 20, font: "Arial" })] })] }),
+          new TableCell({ width: { size: 3800, type: WidthType.DXA }, borders: noBorders, children: [new Paragraph({ spacing: { before: 80, after: 60 }, children: [new TextRun({ text: caso.vessel || "", size: 20, font: "Arial" })] })] }),
+        ]}),
+        new TableRow({ children: [
+          new TableCell({ width: { size: 6000, type: WidthType.DXA }, columnSpan: 2, borders: { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER }, children: [new Paragraph({ children: [] })] }),
+        ]}),
       ]
     });
 
@@ -442,62 +468,21 @@ app.get("/api/cases/:id/timesheet/export", auth, async (req, res) => {
       styles: { default: { document: { run: { font: "Arial", size: 20 } } } },
       sections: [{
         properties: {
-          page: {
-            size: { width: 12240, height: 15840 },
-            margin: { top: 1440, right: 1080, bottom: 1440, left: 1080 }
-          }
+          page: { size: { width: 12240, height: 15840 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } }
         },
         children: [
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 60 },
-            children: [new TextRun({ text: "BRAZMAR Marine Services", bold: true, size: 28, font: "Arial", color: "1B3A6B" })]
-          }),
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 400 },
-            children: [new TextRun({ text: "Breakdown of Time", size: 22, font: "Arial", color: "666666" })]
-          }),
-          new Table({
-            width: { size: 10200, type: WidthType.DXA },
-            rows: [
-              new TableRow({ children: [
-                new TableCell({
-                  width: { size: 2400, type: WidthType.DXA },
-                  borders: cellBorders,
-                  shading: { type: ShadingType.CLEAR, fill: "F5F7FA" },
-                  children: [new Paragraph({ children: [new TextRun({ text: "Breakdown of Time", bold: true, size: 18, font: "Arial" })] })]
-                }),
-                new TableCell({
-                  width: { size: 7800, type: WidthType.DXA },
-                  borders: cellBorders,
-                  children: [new Paragraph({ children: [new TextRun({ text: "", size: 18 })] })]
-                })
-              ]}),
-              new TableRow({ children: [
-                new TableCell({
-                  width: { size: 2400, type: WidthType.DXA },
-                  borders: cellBorders,
-                  shading: { type: ShadingType.CLEAR, fill: "F5F7FA" },
-                  children: [new Paragraph({ children: [new TextRun({ text: "Client", bold: true, size: 18, font: "Arial" })] })]
-                }),
-                new TableCell({
-                  width: { size: 7800, type: WidthType.DXA },
-                  borders: cellBorders,
-                  children: [new Paragraph({ children: [new TextRun({ text: caso.vessel || "", bold: true, size: 18, font: "Arial" })] })]
-                })
-              ]}),
-            ]
-          }),
-          new Paragraph({ spacing: { before: 400, after: 200 }, children: [] }),
-          table,
+          // Título
+          new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, children: [new TextRun({ text: "Breakdown of Time", bold: true, size: 36, font: "Arial" })] }),
+          new Paragraph({ spacing: { after: 600 }, children: [] }),
+          // Tabela info
+          infoTable,
+          new Paragraph({ spacing: { before: 600, after: 200 }, children: [] }),
+          // Tabela principal
+          mainTable,
           new Paragraph({ spacing: { before: 400 }, children: [] }),
           // Legenda siglas
-          ...Object.entries(totaisSigla).map(([sigla, total]) =>
-            new Paragraph({
-              spacing: { after: 60 },
-              children: [new TextRun({ text: `${sigla}: ${total.toFixed(1)}h`, size: 16, font: "Arial", color: "555555" })]
-            })
+          ...Object.entries(totaisSigla).map(([s, total]) =>
+            new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: `Sigla do nome. Ex.: ${s} = ${Object.entries({AC:"Alexandre Campos",MR:"Milton Rodrigues",GS:"Gustavo Sampaio",FA:"Fernando Afonso"}).find(([k])=>k===s)?.[1]||s}`, size: 18, font: "Arial", color: "555555" })] })
           ),
         ]
       }]
