@@ -10,7 +10,6 @@ const https = require("https");
 const db = require("./db");
 const dropbox = require("./dropbox");
 const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, ShadingType } = require("docx");
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -344,6 +343,7 @@ app.get("/api/dropbox/callback", async (req, res) => {
 // ── TIMESHEET EXPORT .DOCX ──────────────────────────────────────────────────
 app.get("/api/cases/:id/timesheet/export", auth, async (req, res) => {
   try {
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, ShadingType } = require("docx");
     const caso = await db.findCase(req.params.id);
     if (!caso) return res.status(404).json({ error: "Caso não encontrado" });
     const entries = await db.listTimesheetForCase(req.params.id);
