@@ -340,160 +340,310 @@ app.get("/api/dropbox/callback", async (req, res) => {
   }
 });
 // ── TIMESHEET EXPORT .DOCX ──────────────────────────────────────────────────
+const SIGLAS_MAP = {
+  "Alexandre Campos": "AC", "Milton Rodrigues": "MR",
+  "Gustavo Sampaio": "GS", "Fernando Afonso": "FA", "Operacional": "OP"
+};
+const SIGLAS_NAMES = { AC: "Alexandre Campos", MR: "Milton Rodrigues", GS: "Gustavo Sampaio", FA: "Fernando Afonso", OP: "Operacional" };
+
+function nomeParaSigla(nome) {
+  if (!nome) return null;
+  if (SIGLAS_MAP[nome]) return SIGLAS_MAP[nome];
+  for (const [full, sigla] of Object.entries(SIGLAS_MAP)) {
+    if (nome.toLowerCase().includes(full.split(" ")[0].toLowerCase())) return sigla;
+  }
+  return nome.split(" ").filter(Boolean).map(w => w[0].toUpperCase()).slice(0,2).join("");
+}
+
 app.get("/api/cases/:id/timesheet/export", auth, async (req, res) => {
   try {
-    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, VerticalAlign, ShadingType, UnderlineType } = require("docx");
-    const caso = await db.findCase(req.params.id);
+    const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+            AlignmentType, WidthType, BorderStyle, VerticalAlign, UnderlineType,
+            ImageRun, PageBreak, ShadingType } = require("docx");
+
+    const caso   = await db.findCase(req.params.id);
     if (!caso) return res.status(404).json({ error: "Caso não encontrado" });
-    const entries = await db.listTimesheetForCase(req.params.id);
+    const tipo   = req.query.tipo || "full"; // "pessoal" | "full"
+    const allEntries = await db.listTimesheetForCase(req.params.id);
 
-    const NO_BORDER  = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
-    const BOT_BORDER = { style: BorderStyle.SINGLE, size: 4, color: "000000" };
-    const noBorders  = { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER };
-    const botBorder  = { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER };
+    // Mapa nome → sigla
+    const SIGLAS = { "Alexandre Campos":"AC","Milton Rodrigues":"MR","Gustavo Sampaio":"GS","Fernando Afonso":"FA" };
+    const NOMES  = Object.fromEntries(Object.entries(SIGLAS).map(([n,s])=>[s,n]));
 
-    // Célula sem borda
-    const cell = (text, width, opts = {}) => new TableCell({
-      width: { size: width, type: WidthType.DXA },
-      borders: noBorders,
-      verticalAlign: VerticalAlign.TOP,
+    // Sigla do usuário logado (para modo pessoal)
+    const nomeLogado = req.user.nome || "";
+    const siglaLogado = SIGLAS[nomeLogado] || nomeLogado.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+
+    const entries = tipo === "pessoal"
+      ? allEntries.filter(e => (e.sigla||"").toUpperCase() === siglaLogado)
+      : allEntries;
+
+    // ── HELPERS ────────────────────────────────────────────────────────────────
+    const NO_B  = { style: BorderStyle.NONE,   size: 0, color: "FFFFFF" };
+    const BOT_B = { style: BorderStyle.SINGLE, size: 4, color: "000000" };
+    const noBorders = { top:NO_B, bottom:NO_B, left:NO_B, right:NO_B };
+    const botBorder = { top:NO_B, bottom:BOT_B, left:NO_B, right:NO_B };
+    const margins   = { top:60, bottom:60, left:100, right:100 };
+
+    const cell = (text, width, opts={}) => new TableCell({
+      width: { size:width, type:WidthType.DXA }, borders: noBorders,
+      verticalAlign: VerticalAlign.TOP, margins,
       children: [new Paragraph({
         alignment: opts.center ? AlignmentType.CENTER : opts.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
-        spacing: { before: 40, after: 40 },
-        children: [new TextRun({
-          text: String(text || ""),
-          size: opts.size || 20,
-          font: "Arial",
-          bold: opts.bold || false,
-          color: opts.color || "000000",
-          underline: opts.underline ? { type: UnderlineType.SINGLE } : undefined,
-        })]
+        spacing: { before:40, after:40 },
+        children: [new TextRun({ text: String(text||""), size: opts.size||20, font:"Arial",
+          bold:opts.bold||false, color:opts.color||"000000",
+          underline: opts.underline ? { type:UnderlineType.SINGLE } : undefined })]
       })]
     });
 
-    // Célula com borda inferior (header da tabela principal)
     const headerCell = (text, width) => new TableCell({
-      width: { size: width, type: WidthType.DXA },
-      borders: botBorder,
-      verticalAlign: VerticalAlign.BOTTOM,
-      children: [new Paragraph({
-        spacing: { before: 40, after: 80 },
-        children: [new TextRun({ text, size: 20, font: "Arial", bold: true, underline: { type: UnderlineType.SINGLE } })]
-      })]
+      width: { size:width, type:WidthType.DXA }, borders: botBorder,
+      verticalAlign: VerticalAlign.BOTTOM, margins,
+      children: [new Paragraph({ spacing:{ before:40, after:80 },
+        children: [new TextRun({ text, size:20, font:"Arial", bold:true, underline:{ type:UnderlineType.SINGLE } })] })]
     });
 
+    const p = (text, opts={}) => new Paragraph({
+      alignment: opts.center ? AlignmentType.CENTER : opts.right ? AlignmentType.RIGHT : AlignmentType.LEFT,
+      spacing: { before: opts.before||0, after: opts.after||120 },
+      children: [new TextRun({ text:String(text||""), size:opts.size||20, font:"Arial",
+        bold:opts.bold||false, color:opts.color||"000000",
+        underline: opts.underline ? { type:UnderlineType.SINGLE } : undefined })]
+    });
+
+    const LOGO_B64 = "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";
+    const logoBuffer = Buffer.from(LOGO_B64, "base64");
+
+    const logoImg = new ImageRun({ type:"jpg", data:logoBuffer,
+      transformation:{ width:160, height:53 },
+      altText:{ title:"BRAZMAR", description:"BRAZMAR Marine Services", name:"logo" } });
+
+    // ── TABELA DE BREAKDOWN (comum a pessoal e full) ──────────────────────────
+    const totalGeral = entries.reduce((s,e)=>s+Number(e.horas),0);
     const totaisSigla = {};
-    entries.forEach(e => { const s = e.sigla || "?"; totaisSigla[s] = (totaisSigla[s] || 0) + Number(e.horas); });
-    const totalGeral = entries.reduce((s, e) => s + Number(e.horas), 0);
+    entries.forEach(e=>{ const s=e.sigla||"?"; totaisSigla[s]=(totaisSigla[s]||0)+Number(e.horas); });
 
     const dataRows = entries.map(e => new TableRow({
       children: [
-        cell(e.data || "", 1500, { center: true }),
-        cell(e.sigla || "", 900, { center: true }),
+        cell(e.data||"", 1500, { center:true }),
+        cell(e.sigla||"", 900, { center:true }),
         cell("", 100),
-        cell(e.atividade || "", 6300),
-        cell(Number(e.horas).toFixed(1), 900, { center: true }),
+        cell(e.atividade||"", 6300),
+        cell(Number(e.horas).toFixed(1), 900, { center:true }),
         cell("", 700),
       ]
     }));
 
-    // Linha separadora antes do total
     const sepRow = new TableRow({ children: [
-      new TableCell({ width: { size: 10400, type: WidthType.DXA }, columnSpan: 6, borders: { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER }, children: [new Paragraph({ children: [] })] })
+      new TableCell({ width:{size:10400,type:WidthType.DXA}, columnSpan:6,
+        borders:{ top:NO_B, bottom:BOT_B, left:NO_B, right:NO_B },
+        children:[new Paragraph({children:[]})] })
     ]});
 
     const totalRow = new TableRow({ children: [
-      cell("", 1500),
-      cell("", 900),
-      cell("", 100),
-      new TableCell({
-        width: { size: 6300, type: WidthType.DXA },
-        borders: noBorders,
-        children: [new Paragraph({
-          alignment: AlignmentType.RIGHT,
-          spacing: { before: 80, after: 40 },
-          children: [new TextRun({ text: "TOTAL:", bold: true, size: 20, font: "Arial" })]
-        })]
-      }),
-      new TableCell({
-        width: { size: 900, type: WidthType.DXA },
-        borders: noBorders,
-        children: [new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { before: 80, after: 40 },
-          children: [new TextRun({ text: totalGeral.toFixed(1), bold: true, size: 20, font: "Arial" })]
-        })]
-      }),
-      cell("", 700),
+      cell("",1500), cell("",900), cell("",100),
+      new TableCell({ width:{size:6300,type:WidthType.DXA}, borders:noBorders, margins,
+        children:[new Paragraph({ alignment:AlignmentType.RIGHT, spacing:{before:80,after:40},
+          children:[new TextRun({text:"TOTAL:", bold:true, size:20, font:"Arial"})] })] }),
+      new TableCell({ width:{size:900,type:WidthType.DXA}, borders:noBorders, margins,
+        children:[new Paragraph({ alignment:AlignmentType.CENTER, spacing:{before:80,after:40},
+          children:[new TextRun({text:totalGeral.toFixed(1), bold:true, size:20, font:"Arial"})] })] }),
+      cell("",700),
     ]});
 
-    const mainTable = new Table({
-      width: { size: 10400, type: WidthType.DXA },
-      borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER, insideH: NO_BORDER, insideV: NO_BORDER },
-      rows: [
-        new TableRow({ tableHeader: true, children: [
-          headerCell("Date",      1500),
-          headerCell("Name",      900),
-          new TableCell({ width: { size: 100, type: WidthType.DXA }, borders: botBorder, children: [new Paragraph({ children: [] })] }),
-          headerCell("Narrative", 6300),
-          headerCell("Hours",     900),
-          headerCell("N/C",       700),
+    const breakdownTable = new Table({
+      width:{size:10400,type:WidthType.DXA},
+      columnWidths:[1500,900,100,6300,900,700],
+      borders:{ top:NO_B, bottom:NO_B, left:NO_B, right:NO_B, insideH:NO_B, insideV:NO_B },
+      rows:[
+        new TableRow({ tableHeader:true, children:[
+          headerCell("Date",1500), headerCell("Name",900),
+          new TableCell({ width:{size:100,type:WidthType.DXA}, borders:botBorder, children:[new Paragraph({children:[]})] }),
+          headerCell("Narrative",6300), headerCell("Hours",900), headerCell("N/C",700),
         ]}),
-        ...dataRows,
-        sepRow,
-        totalRow,
+        ...dataRows, sepRow, totalRow,
       ]
     });
 
-    // Tabela de cabeçalho (Breakdown of Time / Client)
+    // Tabela info (Client)
     const infoTable = new Table({
-      width: { size: 6000, type: WidthType.DXA },
-      borders: { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER, insideH: NO_BORDER, insideV: NO_BORDER },
-      rows: [
-        new TableRow({ children: [
-          new TableCell({ width: { size: 2200, type: WidthType.DXA }, borders: { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER }, children: [new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: "Breakdown of Time", bold: true, size: 20, font: "Arial" })] })] }),
-          new TableCell({ width: { size: 3800, type: WidthType.DXA }, borders: { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER }, children: [new Paragraph({ children: [] })] }),
+      width:{size:6000,type:WidthType.DXA}, columnWidths:[2200,3800],
+      borders:{ top:NO_B, bottom:NO_B, left:NO_B, right:NO_B, insideH:NO_B, insideV:NO_B },
+      rows:[
+        new TableRow({ children:[
+          new TableCell({ width:{size:2200,type:WidthType.DXA}, borders:{top:NO_B,bottom:BOT_B,left:NO_B,right:NO_B}, margins,
+            children:[new Paragraph({spacing:{after:60},children:[new TextRun({text:"Breakdown of Time",bold:true,size:20,font:"Arial"})]})] }),
+          new TableCell({ width:{size:3800,type:WidthType.DXA}, borders:{top:NO_B,bottom:BOT_B,left:NO_B,right:NO_B},
+            children:[new Paragraph({children:[]})] }),
         ]}),
-        new TableRow({ children: [
-          new TableCell({ width: { size: 2200, type: WidthType.DXA }, borders: noBorders, children: [new Paragraph({ spacing: { before: 80, after: 60 }, children: [new TextRun({ text: "Client", bold: true, size: 20, font: "Arial" })] })] }),
-          new TableCell({ width: { size: 3800, type: WidthType.DXA }, borders: noBorders, children: [new Paragraph({ spacing: { before: 80, after: 60 }, children: [new TextRun({ text: caso.vessel || "", size: 20, font: "Arial" })] })] }),
+        new TableRow({ children:[
+          new TableCell({ width:{size:2200,type:WidthType.DXA}, borders:noBorders, margins,
+            children:[new Paragraph({spacing:{before:80,after:60},children:[new TextRun({text:"Client",bold:true,size:20,font:"Arial"})]})] }),
+          new TableCell({ width:{size:3800,type:WidthType.DXA}, borders:noBorders, margins,
+            children:[new Paragraph({spacing:{before:80,after:60},children:[new TextRun({text:caso.vessel||"",size:20,font:"Arial"})]})] }),
         ]}),
-        new TableRow({ children: [
-          new TableCell({ width: { size: 6000, type: WidthType.DXA }, columnSpan: 2, borders: { top: NO_BORDER, bottom: BOT_BORDER, left: NO_BORDER, right: NO_BORDER }, children: [new Paragraph({ children: [] })] }),
+        new TableRow({ children:[
+          new TableCell({ width:{size:6000,type:WidthType.DXA}, columnSpan:2,
+            borders:{top:NO_B,bottom:BOT_B,left:NO_B,right:NO_B}, children:[new Paragraph({children:[]})] }),
         ]}),
       ]
     });
+
+    // Legenda siglas
+    const legendaRows = Object.entries(totaisSigla).map(([s]) =>
+      p(`${s} = ${NOMES[s]||s}`, { size:18, color:"555555", after:40 })
+    );
+
+    let docChildren;
+
+    if (tipo === "pessoal") {
+      // ── TIMESHEET PESSOAL ── simples, sem cover letter
+      docChildren = [
+        new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:200},
+          children:[logoImg] }),
+        p("Breakdown of Time", { center:true, bold:true, size:36, after:60 }),
+        new Paragraph({ spacing:{after:600}, children:[] }),
+        infoTable,
+        new Paragraph({ spacing:{before:600, after:200}, children:[] }),
+        breakdownTable,
+        new Paragraph({ spacing:{before:400}, children:[] }),
+        ...legendaRows,
+      ];
+    } else {
+      // ── TIMESHEET FULL ── com cover letter, invoice e summary
+      const ADDR = [
+        "BRAZMAR Marine Services Ltda",
+        "Av. Marechal Castelo Branco 605, Sala 206",
+        "São Francisco, São Luís – MA. Brazil",
+        "Cep. 65076-090",
+        "T: +55 (98) 4141-0286",
+        "www.brazmar.com",
+      ];
+
+      // Cabeçalho estilo carta
+      const letterHeader = () => [
+        new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:160}, children:[logoImg] }),
+        ...ADDR.map(line => p(line, { center:true, size:18, color:"444444", after:40 })),
+        new Paragraph({ spacing:{after:400}, children:[] }),
+      ];
+
+      // Tabela To/Ref
+      const refTable = (yourRef="", ourRef="", re="", attn="", co="") => new Table({
+        width:{size:9360,type:WidthType.DXA}, columnWidths:[1800,7560],
+        borders:{ top:NO_B, bottom:NO_B, left:NO_B, right:NO_B, insideH:NO_B, insideV:NO_B },
+        rows:[
+          new TableRow({ children:[
+            cell("To the Owners of the",1800,{bold:true,size:18}),
+            cell(`"${caso.vessel||""}"`,7560,{size:18}),
+          ]}),
+          ...(co?[new TableRow({children:[cell("c/o",1800,{size:18}),cell(co,7560,{size:18})]})]:[]),
+          ...(attn?[new TableRow({children:[cell("Attn:",1800,{bold:true,size:18}),cell(attn,7560,{size:18})]})]:[]),
+          new TableRow({ children:[cell("",1800),cell("",7560)] }),
+          new TableRow({ children:[cell("Your Ref:",1800,{bold:true,size:18}),cell(yourRef,7560,{size:18})] }),
+          new TableRow({ children:[cell("Date:",1800,{bold:true,size:18}),cell(new Date().toLocaleDateString("pt-BR"),7560,{size:18})] }),
+          new TableRow({ children:[cell("Our Ref:",1800,{bold:true,size:18}),cell(ourRef||caso.ref||"",7560,{size:18})] }),
+          new TableRow({ children:[cell("Re:",1800,{bold:true,size:18}),cell(re,7560,{size:18})] }),
+        ]
+      });
+
+      // SUMMARY table
+      const siglasPresentes = [...new Set(allEntries.map(e=>e.sigla||"?"))].filter(s=>s!=="?");
+      const summaryRows = siglasPresentes.map(s => new TableRow({ children:[
+        cell(NOMES[s]||s, 4000, {size:18}),
+        cell(totaisSigla[s]?.toFixed(1)||"0.0", 1800, {center:true,size:18}),
+        cell("", 1800, {size:18}), // Hr. Rate — preencher manualmente
+        cell("", 1760, {size:18}), // Total — preencher manualmente
+      ]}));
+
+      const summaryTable = new Table({
+        width:{size:9360,type:WidthType.DXA}, columnWidths:[4000,1800,1800,1760],
+        borders:{ top:NO_B, bottom:NO_B, left:NO_B, right:NO_B, insideH:NO_B, insideV:NO_B },
+        rows:[
+          new TableRow({ tableHeader:true, children:[
+            headerCell("Name",4000), headerCell("Hrs. Recorded",1800),
+            headerCell("Hr. Rate",1800), headerCell("Total (US$)",1760),
+          ]}),
+          ...summaryRows,
+          sepRow,
+          new TableRow({ children:[
+            cell("Total:",4000,{bold:true}),
+            cell(totalGeral.toFixed(1),1800,{bold:true,center:true}),
+            cell("",1800), cell("US$ ",1760,{bold:true}),
+          ]}),
+        ]
+      });
+
+      docChildren = [
+        // PAGE 1 — Cover letter
+        ...letterHeader(),
+        p(`To the Owners of the "${caso.vessel||""}"`, { size:20, after:40 }),
+        p(`c/o ${caso.cliente||""}`, { size:20, after:40 }),
+        new Paragraph({ spacing:{after:400}, children:[] }),
+        refTable("","",caso.summary ? caso.summary.substring(0,80) : ""),
+        new Paragraph({ spacing:{after:400}, children:[] }),
+        p("Dear Sirs,", { size:20, after:200 }),
+        p("Please find below the invoice for our professional charges on the above matter as detailed in the attached breakdown.", { size:20, after:400 }),
+        p("Kind regards,", { size:20, after:200 }),
+        p("BRAZMAR", { size:20, bold:true, after:80 }),
+
+        // PAGE 2 — Invoice (com page break)
+        new Paragraph({ children:[new PageBreak()] }),
+        ...letterHeader(),
+        refTable("","",caso.summary ? caso.summary.substring(0,80) : ""),
+        new Paragraph({ spacing:{after:400}, children:[] }),
+        new Table({
+          width:{size:9360,type:WidthType.DXA}, columnWidths:[7000,2360],
+          borders:{ top:NO_B, bottom:NO_B, left:NO_B, right:NO_B, insideH:NO_B, insideV:NO_B },
+          rows:[
+            new TableRow({ children:[
+              cell("Description",7000,{bold:true,underline:true}),
+              cell("Amount",2360,{bold:true,underline:true}),
+            ]}),
+            new TableRow({ children:[cell("Professional charges",7000,{}),cell("US$ ",2360,{})] }),
+            new TableRow({ children:[cell("IOF Tax + Banking charges",7000,{}),cell("US$ ",2360,{})] }),
+            new TableRow({ children:[
+              cell("Total due",7000,{bold:true}),
+              cell("US$ ",2360,{bold:true}),
+            ]}),
+          ]
+        }),
+
+        // PAGE 3 — Breakdown
+        new Paragraph({ children:[new PageBreak()] }),
+        new Paragraph({ alignment:AlignmentType.CENTER, spacing:{after:200}, children:[logoImg] }),
+        p("Breakdown of Time", { center:true, bold:true, size:36, after:60 }),
+        new Paragraph({ spacing:{after:600}, children:[] }),
+        infoTable,
+        new Paragraph({ spacing:{before:600, after:200}, children:[] }),
+        breakdownTable,
+        new Paragraph({ spacing:{before:400}, children:[] }),
+        ...legendaRows,
+
+        // SUMMARY
+        new Paragraph({ spacing:{before:400, after:200}, children:[] }),
+        p("SUMMARY", { bold:true, size:22, after:200 }),
+        summaryTable,
+      ];
+    }
 
     const doc = new Document({
-      styles: { default: { document: { run: { font: "Arial", size: 20 } } } },
-      sections: [{
-        properties: {
-          page: { size: { width: 12240, height: 15840 }, margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } }
+      styles:{ default:{ document:{ run:{ font:"Arial", size:20 } } } },
+      sections:[{
+        properties:{
+          page:{ size:{width:12240,height:15840}, margin:{top:1440,right:1440,bottom:1440,left:1440} }
         },
-        children: [
-          // Título
-          new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, children: [new TextRun({ text: "Breakdown of Time", bold: true, size: 36, font: "Arial" })] }),
-          new Paragraph({ spacing: { after: 600 }, children: [] }),
-          // Tabela info
-          infoTable,
-          new Paragraph({ spacing: { before: 600, after: 200 }, children: [] }),
-          // Tabela principal
-          mainTable,
-          new Paragraph({ spacing: { before: 400 }, children: [] }),
-          // Legenda siglas
-          ...Object.entries(totaisSigla).map(([s, total]) =>
-            new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: `Sigla do nome. Ex.: ${s} = ${Object.entries({AC:"Alexandre Campos",MR:"Milton Rodrigues",GS:"Gustavo Sampaio",FA:"Fernando Afonso"}).find(([k])=>k===s)?.[1]||s}`, size: 18, font: "Arial", color: "555555" })] })
-          ),
-        ]
+        children: docChildren
       }]
     });
 
     const buffer = await Packer.toBuffer(doc);
-    const filename = `BRAZMAR - ${caso.ref || caso.id} - ${caso.vessel} - Timesheet.docx`;
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    const tipoPrefixo = tipo === "pessoal" ? siglaLogado : "Full";
+    const filename = `BRAZMAR - ${caso.ref||caso.id} - ${caso.vessel} - ${tipoPrefixo} - Timesheet.docx`;
+    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition",`attachment; filename="${filename}"`);
     res.send(buffer);
-  } catch (e) {
+  } catch(e) {
     console.error("Erro export timesheet:", e);
     res.status(500).json({ error: e.message });
   }
