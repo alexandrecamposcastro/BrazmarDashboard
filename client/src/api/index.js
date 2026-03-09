@@ -33,6 +33,7 @@ export const api = {
   deleteCase: (id) => request("DELETE", `/cases/${id}`),
   addEmail: (caseId, data) => request("POST", `/cases/${caseId}/emails`, data),
   addTimesheet: (caseId, data) => request("POST", `/cases/${caseId}/timesheet`, data),
+  updateTimesheet: (caseId, tid, data) => request("PUT", `/cases/${caseId}/timesheet/${tid}`, data),
   deleteTimesheet: (caseId, tid) => request("DELETE", `/cases/${caseId}/timesheet/${tid}`),
   uploadDocs: (caseId, files) => uploadFiles(`/cases/${caseId}/docs`, files),
   deleteDoc: (caseId, did) => request("DELETE", `/cases/${caseId}/docs/${did}`),

@@ -100,6 +100,8 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
   const [caseData,setCaseData]=useState(caso);
   const [savingStatus,setSavingStatus]=useState(false);
   const [addingTime,setAddingTime]=useState(false);
+  const [editingTime,setEditingTime]=useState(null); // {id, atividade, horas, data, sigla}
+  const [savingTime,setSavingTime]=useState(false);
   const [uploading,setUploading]=useState(false);
   const [analisando,setAnalisando]=useState(false);
   const fileRef=useRef();
@@ -120,6 +122,19 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
     }finally{setAddingTime(false)}
   };
   const handleDelTime=async tid=>{if(!confirm("Remover?"))return;await api.deleteTimesheet(caso.id,tid);setTimesheet(p=>p.filter(t=>t.id!==tid))};
+  const handleEditTimeSave=async()=>{
+    if(!editingTime||!editingTime.atividade.trim()||!editingTime.horas)return;
+    setSavingTime(true);
+    try{
+      const updated=await api.updateTimesheet(caso.id,editingTime.id,{
+        atividade:editingTime.atividade,horas:parseFloat(editingTime.horas),
+        data:editingTime.data,sigla:editingTime.sigla
+      });
+      setTimesheet(p=>p.map(t=>t.id===updated.id?updated:t));
+      setEditingTime(null);
+    }catch(e){alert("Erro: "+e.message);}
+    finally{setSavingTime(false);}
+  };
   const handleUpload=async e=>{const files=Array.from(e.target.files);if(!files.length)return;setUploading(true);try{const saved=await api.uploadDocs(caso.id,files);setDocs(p=>[...p,...saved]);}catch(err){alert("Erro no upload: "+err.message)}finally{setUploading(false);e.target.value=""}};
   const handleDelDoc=async did=>{if(!confirm("Remover documento?"))return;await api.deleteDoc(caso.id,did);setDocs(p=>p.filter(d=>d.id!==did))};
   const handleAnalisar=async()=>{
@@ -231,12 +246,38 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <span style={{fontSize:14,fontWeight:700,color:C.primary,background:"#e8f4ff",padding:"4px 14px",borderRadius:20}}>Total: {totalH.toFixed(1)}h</span>
                 {timesheet.length>0&&(
-                  <a
-                    href={`/api/cases/${caso.id}/timesheet/export`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.primary}`,background:"#fff",color:C.primary,fontWeight:700,cursor:"pointer",fontSize:12,textDecoration:"none",display:"flex",alignItems:"center",gap:5}}
-                  >📄 Exportar .docx</a>
+                  <>
+                    <button
+                      onClick={async()=>{
+                        try{
+                          const token=localStorage.getItem("brazmar_token");
+                          const r=await fetch(`/api/cases/${caso.id}/timesheet/export?tipo=pessoal`,{headers:{Authorization:`Bearer ${token}`}});
+                          if(!r.ok){const err=await r.text();throw new Error(err);}
+                          const blob=await r.blob();
+                          const url=URL.createObjectURL(blob);
+                          const a=document.createElement("a");a.href=url;
+                          a.download=`Timesheet Pessoal - ${caso.vessel}.docx`;
+                          a.click();URL.revokeObjectURL(url);
+                        }catch(e){alert("Erro: "+e.message);}
+                      }}
+                      style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.primary}`,background:"#fff",color:C.primary,fontWeight:700,cursor:"pointer",fontSize:12}}
+                    >📄 Meu Timesheet</button>
+                    <button
+                      onClick={async()=>{
+                        try{
+                          const token=localStorage.getItem("brazmar_token");
+                          const r=await fetch(`/api/cases/${caso.id}/timesheet/export?tipo=full`,{headers:{Authorization:`Bearer ${token}`}});
+                          if(!r.ok){const err=await r.text();throw new Error(err);}
+                          const blob=await r.blob();
+                          const url=URL.createObjectURL(blob);
+                          const a=document.createElement("a");a.href=url;
+                          a.download=`Timesheet Full - ${caso.vessel}.docx`;
+                          a.click();URL.revokeObjectURL(url);
+                        }catch(e){alert("Erro: "+e.message);}
+                      }}
+                      style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.dark}`,background:C.dark,color:"#fff",fontWeight:700,cursor:"pointer",fontSize:12}}
+                    >📋 Timesheet Full</button>
+                  </>
                 )}
               </div>
             </div>
@@ -258,16 +299,41 @@ export default function CaseDetail({caso,onBack,onUpdate,onDelete,onRefresh,curr
             {timesheet.length===0
               ?<p style={{textAlign:"center",color:C.muted,padding:32}}>Nenhuma atividade registrada.</p>
               :<div style={{overflowX:"auto"}}>
+                {editingTime&&(
+                  <div style={{background:"#f8f9fa",border:`1px solid ${C.border}`,borderRadius:10,padding:16,marginBottom:16,display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      <label style={{fontSize:11,color:C.muted,fontWeight:600}}>SIGLA</label>
+                      <input value={editingTime.sigla} onChange={e=>setEditingTime(p=>({...p,sigla:e.target.value.toUpperCase()}))} style={{width:70,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.primary}`,fontSize:13,fontWeight:700,textTransform:"uppercase"}}/>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      <label style={{fontSize:11,color:C.muted,fontWeight:600}}>DATA</label>
+                      <input value={editingTime.data} onChange={e=>setEditingTime(p=>({...p,data:e.target.value}))} placeholder="DD/MM/AAAA" style={{width:110,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.primary}`,fontSize:13}}/>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:4,flex:1,minWidth:200}}>
+                      <label style={{fontSize:11,color:C.muted,fontWeight:600}}>ATIVIDADE</label>
+                      <input value={editingTime.atividade} onChange={e=>setEditingTime(p=>({...p,atividade:e.target.value}))} style={{padding:"8px 10px",borderRadius:8,border:`1px solid ${C.primary}`,fontSize:13,width:"100%",boxSizing:"border-box"}}/>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      <label style={{fontSize:11,color:C.muted,fontWeight:600}}>HORAS</label>
+                      <input value={editingTime.horas} onChange={e=>setEditingTime(p=>({...p,horas:e.target.value}))} type="number" step="0.25" min="0.1" style={{width:80,padding:"8px 10px",borderRadius:8,border:`1px solid ${C.primary}`,fontSize:13}}/>
+                    </div>
+                    <button onClick={handleEditTimeSave} disabled={savingTime} style={{padding:"8px 16px",borderRadius:8,border:"none",background:C.success,color:"#fff",fontWeight:700,cursor:"pointer",fontSize:13}}>{savingTime?"...":"✓ Salvar"}</button>
+                    <button onClick={()=>setEditingTime(null)} style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"#fff",color:C.muted,fontWeight:700,cursor:"pointer",fontSize:13}}>✕</button>
+                  </div>
+                )}
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead><tr>{["Data","Sigla","Atividade","Horas",""].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
                   <tbody>
                     {timesheet.map(t=>(
-                      <tr key={t.id}>
+                      <tr key={t.id} style={{background:editingTime?.id===t.id?"#fffbea":"transparent"}}>
                         <td style={{...td,color:C.muted,fontSize:12,whiteSpace:"nowrap"}}>{t.data}</td>
                         <td style={td}><span style={{background:t.fonte==="bot"?"#e8f4ff":C.primary,color:t.fonte==="bot"?C.primary:"#fff",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700,letterSpacing:1}}>{t.sigla||sigla(t.usuario)}</span></td>
                         <td style={td}>{t.atividade}{t.fonte==="bot"&&<span style={{marginLeft:6,fontSize:10,color:C.muted,background:"#f5f5f5",padding:"1px 6px",borderRadius:4}}>auto</span>}</td>
                         <td style={td}><span style={{fontWeight:700,color:C.primary,background:"#e8f4ff",padding:"2px 10px",borderRadius:10}}>{t.horas}h</span></td>
-                        <td style={td}><button onClick={()=>handleDelTime(t.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}} title="Remover">🗑</button></td>
+                        <td style={{...td,whiteSpace:"nowrap"}}>
+                          <button onClick={()=>setEditingTime({id:t.id,atividade:t.atividade,horas:t.horas,data:t.data,sigla:t.sigla||sigla(t.usuario)})} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:14,marginRight:4}} title="Editar">✏️</button>
+                          <button onClick={()=>handleDelTime(t.id)} style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}} title="Remover">🗑</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

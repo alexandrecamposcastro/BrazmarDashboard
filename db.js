@@ -46,14 +46,15 @@ async function init() {
     CREATE TABLE IF NOT EXISTS timesheet (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       case_id INTEGER NOT NULL,
-      user_id INTEGER NOT NULL,
+      user_id INTEGER,
       nome_manual TEXT DEFAULT '',
+      sigla TEXT DEFAULT '',
+      fonte TEXT DEFAULT 'manual',
       atividade TEXT NOT NULL,
       horas REAL NOT NULL,
       data TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS docs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,10 +68,6 @@ async function init() {
       FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
     );
   `);
-  // Migracoes incrementais
-  try { await client.execute("ALTER TABLE timesheet ADD COLUMN nome_manual TEXT DEFAULT ''"); } catch(e) {}
-  try { await client.execute("ALTER TABLE timesheet ADD COLUMN sigla TEXT DEFAULT ''"); } catch(e) {}
-  try { await client.execute("ALTER TABLE timesheet ADD COLUMN fonte TEXT DEFAULT 'manual'"); } catch(e) {} // 'manual' | 'bot'
 }
 
 // ── USERS ──────────────────────────────────────────────────────────────────
@@ -183,6 +180,11 @@ async function addTimesheetBot({ case_id, sigla, atividade, horas, data }) {
   const t = row.rows[0];
   return { ...t, id: Number(t.id) };
 }
+async function updateTimesheet(id, case_id, { atividade, horas, data, sigla }) {
+  await client.execute({ sql: "UPDATE timesheet SET atividade=?, horas=?, data=?, sigla=? WHERE id=? AND case_id=?", args: [atividade, Number(horas), data, sigla||"", Number(id), Number(case_id)] });
+  const row = await client.execute({ sql: "SELECT * FROM timesheet WHERE id=?", args: [Number(id)] });
+  return row.rows[0];
+}
 async function deleteTimesheet(id, case_id) {
   await client.execute({ sql: "DELETE FROM timesheet WHERE id=? AND case_id=?", args: [Number(id), Number(case_id)] });
 }
@@ -210,4 +212,4 @@ async function deleteDoc(id, case_id) {
   return doc;
 }
 
-module.exports = { init, findUserByEmail, findUserById, createUser, listUsers, listCases, findCase, findCaseByRef, findUnassignedByVessel, updateDoc, createCase, updateCase, deleteCase, listEmailsForCase, addEmail, listTimesheetForCase, addTimesheet, addTimesheetBot, deleteTimesheet, listDocsForCase, addDoc, deleteDoc };
+module.exports = { init, findUserByEmail, findUserById, createUser, listUsers, listCases, findCase, findCaseByRef, findUnassignedByVessel, updateDoc, createCase, updateCase, deleteCase, listEmailsForCase, addEmail, listTimesheetForCase, addTimesheet, addTimesheetBot, updateTimesheet, deleteTimesheet, listDocsForCase, addDoc, deleteDoc };

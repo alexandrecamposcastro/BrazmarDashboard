@@ -30,6 +30,7 @@ async function getAccessToken() {
   return _accessToken;
 }
 const BASE_PATH = "/BRAZMAR - Relatórios/Relatorios em andamento";
+const TS_BASE   = "/BRAZMAR - time sheets";
 
 // Remove prefixos náuticos do nome do navio
 function limparNomeNavio(vesselName) {
@@ -92,6 +93,41 @@ async function criarPasta(path) {
 async function garantirPastaCaso(vesselName) {
   await criarPasta(casePath(vesselName));
   await criarPasta(docsPath(vesselName));
+}
+
+// Upload de timesheet para a pasta BRAZMAR - time sheets / folder
+async function uploadTimesheet(folderName, filename, buffer) {
+  const folderPath = `${TS_BASE}/${folderName}`;
+  // garante que a pasta pai e a subpasta existem
+  await criarPasta(TS_BASE);
+  await criarPasta(folderPath);
+  const token = await getAccessToken();
+  const path  = `${folderPath}/${filename}`;
+  const result = await new Promise((resolve, reject) => {
+    const options = {
+      hostname: "content.dropboxapi.com",
+      path: "/2/files/upload",
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/octet-stream",
+        "Dropbox-API-Arg": JSON.stringify({ path, mode: "overwrite", autorename: false, mute: false })
+          .replace(/[\u0080-\uFFFF]/g, c => "\\u" + c.charCodeAt(0).toString(16).padStart(4,"0"))
+      }
+    };
+    const req = https.request(options, res => {
+      let chunks = [];
+      res.on("data", c => chunks.push(c));
+      res.on("end", () => {
+        const text = Buffer.concat(chunks).toString();
+        try { resolve(JSON.parse(text)); } catch(e) { reject(new Error("Dropbox TS resposta inválida: " + text.substring(0,200))); }
+      });
+    });
+    req.on("error", reject);
+    req.write(buffer);
+    req.end();
+  });
+  return result;
 }
 
 // Upload de um arquivo para o Dropbox
@@ -190,4 +226,4 @@ async function linkPasta(vesselName) {
   }
 }
 
-module.exports = { casePath, docsPath, garantirPastaCaso, uploadArquivo, listarDocs, baixarArquivo, deletarArquivo, linkPasta };
+module.exports = { casePath, docsPath, garantirPastaCaso, uploadArquivo, uploadTimesheet, listarDocs, baixarArquivo, deletarArquivo, linkPasta };
