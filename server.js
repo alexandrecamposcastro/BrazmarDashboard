@@ -455,6 +455,7 @@ app.get("/api/cases/:id/timesheet/export", auth, async (req, res) => {
       altText:{ title:"BRAZMAR", description:"BRAZMAR Marine Services", name:"logo" } });
 
     // ── TABELA DE BREAKDOWN (comum a pessoal e full) ──────────────────────────
+<<<<<<< HEAD
     // Mescla entradas do mesmo dia E mesma sigla (para pessoal: mesmo dia apenas)
     const mergedMap = new Map();
     for (const e of entries) {
@@ -478,6 +479,13 @@ app.get("/api/cases/:id/timesheet/export", auth, async (req, res) => {
     mergedEntries.forEach(e=>{ const s=e.sigla||"?"; totaisSigla[s]=(totaisSigla[s]||0)+Number(e.horas); });
 
     const dataRows = mergedEntries.map(e => new TableRow({
+=======
+    const totalGeral = entries.reduce((s,e)=>s+Number(e.horas),0);
+    const totaisSigla = {};
+    entries.forEach(e=>{ const s=e.sigla||"?"; totaisSigla[s]=(totaisSigla[s]||0)+Number(e.horas); });
+
+    const dataRows = entries.map(e => new TableRow({
+>>>>>>> dd23dd6ba2f4c9991b6a1ee532710209f45ec37e
       children: [
         cell(e.data||"", 1500, { center:true }),
         cell(e.sigla||"", 900, { center:true }),
@@ -691,6 +699,7 @@ app.get("/api/cases/:id/timesheet/export", auth, async (req, res) => {
     });
 
     const buffer = await Packer.toBuffer(doc);
+<<<<<<< HEAD
 
     // ── Nome do arquivo: BRAZMAR - REF.ANO.SIGLALOCAL - VESSEL - [SIGLA|full timesheet].docx
     const anoAtual = new Date().getFullYear().toString().slice(-2);
@@ -708,6 +717,10 @@ app.get("/api/cases/:id/timesheet/export", auth, async (req, res) => {
       console.error("Dropbox timesheet upload error (non-fatal):", dbErr.message);
     }
 
+=======
+    const tipoPrefixo = tipo === "pessoal" ? siglaLogado : "Full";
+    const filename = `BRAZMAR - ${caso.ref||caso.id} - ${caso.vessel} - ${tipoPrefixo} - Timesheet.docx`;
+>>>>>>> dd23dd6ba2f4c9991b6a1ee532710209f45ec37e
     res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.setHeader("Content-Disposition",`attachment; filename="${filename}"`);
     res.send(buffer);
