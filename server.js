@@ -232,8 +232,12 @@ function normalizarNavio(v) {
 // Ref BRAZMAR igual = 100 pontos (garantia absoluta)
 // Sem ref: navio + porto + tipo + ano
 function calcularSimilaridade(novo, existente) {
+  // TBI não é ref real — ignora no match por ref
+  const refNovo   = novo.ref      && novo.ref.trim().toUpperCase()      !== "TBI" ? novo.ref.trim()      : null;
+  const refExist  = existente.ref && existente.ref.trim().toUpperCase() !== "TBI" ? existente.ref.trim() : null;
+
   // Ref BRAZMAR igual → 100 pontos, mescla garantida
-  if (novo.ref && existente.ref && novo.ref.trim() === existente.ref.trim()) return 100;
+  if (refNovo && refExist && refNovo === refExist) return 100;
 
   let score = 0;
 
@@ -250,7 +254,7 @@ function calcularSimilaridade(novo, existente) {
     }
   }
 
-  // Porto → peso médio
+  // Porto → peso médio (só penaliza se AMBOS têm porto e são diferentes)
   const pNovo = (novo.porto||"").toUpperCase().replace(/[^A-Z]/g,"");
   const pExist = (existente.porto||"").toUpperCase().replace(/[^A-Z]/g,"");
   if (pNovo && pExist) {
@@ -260,6 +264,8 @@ function calcularSimilaridade(novo, existente) {
     for (const [a, b] of aliases) {
       if ((pNovo.includes(a)&&pExist.includes(b))||(pNovo.includes(b)&&pExist.includes(a))) { score += 15; break; }
     }
+  } else if (!pExist && pNovo) {
+    score += 10; // caso existente sem porto: não penaliza
   }
 
   // Tipo igual → peso baixo
@@ -275,6 +281,11 @@ app.post("/api/webhook/email", async (req, res) => {
   try {
     const { vessel, cliente, porto, tipo, urgencia, summary, emailBody, de, assunto, ref, eta, etb, ets, timesheet_entry } = req.body;
     if (!vessel) return res.status(400).json({ error: "vessel obrigatório" });
+
+    // Ref BRAZMAR: padrão XXXX.ANO.SIGLA ou XXXX/ANO/SIGLA (ex: 1109.26.SLZ, 0048/26/SLZ)
+    // Refs de clube (ex: P/2025/334816, 21/003/KKS, 2019003859) são usadas APENAS para matching, nunca salvas
+    const isBrazmarRef = (r) => r && /^\d{3,4}[./]\d{2,4}[./][A-Z]{2,5}$/i.test(r.trim());
+    const refParaSalvar = isBrazmarRef(ref) ? ref.trim() : null;
 
     const resumoEmail = emailBody || assunto || "";
     const urgPriority = { "ALTA": 3, "MÉDIA": 2, "BAIXA": 1 };
@@ -327,7 +338,8 @@ RESUMO COMBINADO:`;
       if (eta) updates.eta = eta;
       if (etb) updates.etb = etb;
       if (ets) updates.ets = ets;
-      if (ref && !melhorCaso.ref) { updates.ref = ref; updates.status = "em_andamento"; }
+      // Só salva ref se for padrão BRAZMAR — refs de clube são usadas só pro matching
+      if (refParaSalvar && !melhorCaso.ref) { updates.ref = refParaSalvar; updates.status = "em_andamento"; }
       if (Object.keys(updates).length) await db.updateCase(melhorCaso.id, updates);
       if (timesheet_entry && timesheet_entry.sigla && timesheet_entry.atividade) {
         await db.addTimesheetBot({ case_id: melhorCaso.id, ...timesheet_entry });
@@ -336,7 +348,7 @@ RESUMO COMBINADO:`;
     }
 
     // Nenhum caso similar → cria caso novo
-    const caso = await db.createCase({ vessel, cliente, porto, tipo, urgencia, summary, eta: eta||'', etb: etb||'', ets: ets||'', ref: ref||'', status: ref ? 'em_andamento' : 'nao_atribuido' });
+    const caso = await db.createCase({ vessel, cliente, porto, tipo, urgencia, summary, eta: eta||'', etb: etb||'', ets: ets||'', ref: refParaSalvar||'', status: refParaSalvar ? 'em_andamento' : 'nao_atribuido' });
     await db.addEmail({ case_id: caso.id, de: de||"", assunto: assunto||"", resumo: resumoEmail });
     if (timesheet_entry && timesheet_entry.sigla && timesheet_entry.atividade) {
       await db.addTimesheetBot({ case_id: caso.id, ...timesheet_entry });
